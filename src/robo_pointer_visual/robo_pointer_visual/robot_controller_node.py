@@ -92,24 +92,23 @@ class RobotControllerNode(Node):
                  # Logique de décision basée sur 8 zones externes
                  if received_y < bottom_bound: # Zone du bas de l'image
                       if received_x < left_bound:
-                           current_command = "MOVE_BOTTOM_LEFT"
+                           current_command = "MOVE_DOWN_LEFT"
                       elif received_x > right_bound:
-                           current_command = "MOVE_BOTTOM_RIGHT"
+                           current_command = "MOVE_DOWN_RIGHT"
                       else:
-                           current_command = "MOVE_BOTTOM"
+                           current_command = "MOVE_DOWN"
                  elif received_y > top_bound: # Zone du haut de l'image
                       if received_x < left_bound:
-                           current_command = "MOVE_TOP_LEFT"
+                           current_command = "MOVE_UP_LEFT"
                       elif received_x > right_bound:
-                           current_command = "MOVE_TOP_RIGHT"
+                           current_command = "MOVE_UP_RIGHT"
                       else:
-                           current_command = "MOVE_TOP"
+                           current_command = "MOVE_UP"
                  else: # Zone du milieu (verticalement), hors zone morte centrale
                       if received_x < left_bound:
                            current_command = "MOVE_LEFT"
                       elif received_x > right_bound:
                            current_command = "MOVE_RIGHT"
-                      # Pas de 'else' ici, le cas central est déjà traité
 
         # --- 2. Publier la commande SEULEMENT si elle a changé ---
         if current_command != self.last_command:
