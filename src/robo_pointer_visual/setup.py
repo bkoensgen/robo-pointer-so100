@@ -23,6 +23,8 @@ setup(
             'vision_node = robo_pointer_visual.vision_node:main',
             'robot_controller_node = robo_pointer_visual.robot_controller_node:main',
             'dummy_robot_interface = robo_pointer_visual.dummy_robot_interface:main',
+            'real_robot_interface = robo_pointer_visual.real_robot_interface:main',
+            'check_env = robo_pointer_visual.check_env:main',
         ],
     },
 )
