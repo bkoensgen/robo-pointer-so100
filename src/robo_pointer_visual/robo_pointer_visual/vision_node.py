@@ -98,6 +98,11 @@ class VisionNode(Node):
 
         if ret and frame is not None:
             try:
+            
+            	# --- 0. Retourner l'image ---
+                flip_code = -1
+                frame = cv2.flip(frame, flip_code)
+
                 # --- 1. Publication de l'image originale ---
                 ros_image_msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
                 ros_image_msg.header.stamp = current_stamp
