@@ -2,17 +2,13 @@
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Point  # Pour recevoir les coordonnées
-from std_msgs.msg import String      # Pour publier la commande textuelle
-
-# Supprimé les constantes globales IMAGE_WIDTH, IMAGE_HEIGHT
+from geometry_msgs.msg import Vector3, Point
 
 class RobotControllerNode(Node):
     """
     Ce nœud s'abonne aux coordonnées de la cible détectée (/detected_target_point),
-    interprète la position de la cible dans l'image (en utilisant des paramètres ROS 2
-    pour la taille de l'image et une zone morte centrale), détermine une commande
-    directionnelle simple, et publie cette commande sur /robot_command.
+    calcule l'erreur par rapport au centre, détermine un signal de contrôle proportionnel,
+    et publie ce signal (Vector3) sur /robot_control_signal.
     """
     def __init__(self):
         # Initialise le nœud ROS 2
@@ -22,21 +18,19 @@ class RobotControllerNode(Node):
         # --- Paramètres ROS 2 ---
         self.declare_parameter('image_width', 640) # Valeur par défaut 640
         self.declare_parameter('image_height', 480) # Valeur par défaut 480
-        self.declare_parameter('center_deadzone_ratio_x', 0.2) # 20% de la largeur comme zone morte
-        self.declare_parameter('center_deadzone_ratio_y', 0.2) # 20% de la hauteur comme zone morte
+
+        # Nouveaux paramètres pour les gains proportionnels
+        self.declare_parameter('kp_pan', 0.2) # Gain pour le mouvement horizontal (pan)
+        self.declare_parameter('kp_lift', 0.2) # Gain pour le mouvement vertical (lift)
 
         # Récupérer les valeurs des paramètres
         self.image_width = self.get_parameter('image_width').get_parameter_value().integer_value
         self.image_height = self.get_parameter('image_height').get_parameter_value().integer_value
-        deadzone_ratio_x = self.get_parameter('center_deadzone_ratio_x').get_parameter_value().double_value
-        deadzone_ratio_y = self.get_parameter('center_deadzone_ratio_y').get_parameter_value().double_value
-
-        # Calculer les seuils absolus en pixels pour la zone morte (la moitié de la zone morte totale)
-        self.deadzone_threshold_x = (self.image_width * deadzone_ratio_x) / 2.0
-        self.deadzone_threshold_y = (self.image_height * deadzone_ratio_y) / 2.0
+        self.kp_pan = self.get_parameter('kp_pan').get_parameter_value().double_value
+        self.kp_lift = self.get_parameter('kp_lift').get_parameter_value().double_value
 
         self.get_logger().info(f'Using image dimensions: {self.image_width}x{self.image_height}')
-        self.get_logger().info(f'Center deadzone thresholds: +/-{self.deadzone_threshold_x:.0f}px X, +/-{self.deadzone_threshold_y:.0f}px Y')
+        self.get_logger().info(f'Using proportional gains: Kp_pan={self.kp_pan}, Kp_lift={self.kp_lift}')
 
         # --- Subscriber aux coordonnées de la cible ---
         self.target_subscription = self.create_subscription(
@@ -47,87 +41,50 @@ class RobotControllerNode(Node):
         )
         self.get_logger().info('Subscribed to /detected_target_point')
 
-        # --- Publisher pour la commande robot ---
-        self.command_publisher = self.create_publisher(
-            String,
-            '/robot_command',
+        # --- Publisher pour le signal de contrôle robot ---
+        self.control_signal_publisher = self.create_publisher(
+            Vector3,
+            '/robot_control_signal',
             10 # QoS depth
         )
-        self.get_logger().info('Publishing robot commands on /robot_command')
-
-        # --- Variable pour état interne ---
-        self.last_command = None # Mémorise la dernière commande publiée
+        self.get_logger().info('Publishing control signals on /robot_control_signal')
 
     def target_callback(self, msg):
         """
         Callback appelé à chaque message Point reçu.
-        Interprète les coordonnées en utilisant les zones et la zone morte,
-        et publie une commande si elle change.
+        Calcule l'erreur par rapport au centre et publie un signal de contrôle
+        proportionnel (Vector3) sur /robot_control_signal.
         """
-        received_x = msg.x
-        received_y = msg.y
+        cx = msg.x
+        cy = msg.y
 
-        current_command = None # Commande déterminée pour cette trame
+        control_signal = Vector3() # Initialisé à (0,0,0)
 
-        # --- 1. Interpréter les Coordonnées reçues ---
-        if received_x == -1.0:
-            # Aucune cible valide détectée par le nœud de vision
-            current_command = "IDLE"
+        if cx == -1.0:
+            # Aucune cible détectée, envoyer un signal nul
+            self.get_logger().info('No target detected. Publishing null control signal.')
         else:
-            # Cible détectée, vérifier d'abord la zone morte centrale
+            # Cible détectée, calculer l'erreur et la commande proportionnelle
             center_x = self.image_width / 2.0
             center_y = self.image_height / 2.0
 
-            if abs(received_x - center_x) < self.deadzone_threshold_x and \
-               abs(received_y - center_y) < self.deadzone_threshold_y:
-                 # La cible est dans la zone morte centrale
-                 current_command = "CENTERED"
-            else:
-                 # La cible est en dehors de la zone morte, déterminer la zone externe
-                 left_bound = self.image_width / 3
-                 right_bound = 2 * self.image_width / 3
-                 bottom_bound = self.image_height / 3 # Rappel: Y=0 est en HAUT
-                 top_bound = 2 * self.image_height / 3
+            error_x = cx - center_x
+            # Axe Y image : 0 en haut. Erreur positive = objet plus bas que le centre
+            error_y = cy - center_y
 
-                 # Logique de décision basée sur 8 zones externes
-                 if received_y < bottom_bound: # Zone du bas de l'image
-                      if received_x < left_bound:
-                           current_command = "MOVE_DOWN_LEFT"
-                      elif received_x > right_bound:
-                           current_command = "MOVE_DOWN_RIGHT"
-                      else:
-                           current_command = "MOVE_DOWN"
-                 elif received_y > top_bound: # Zone du haut de l'image
-                      if received_x < left_bound:
-                           current_command = "MOVE_UP_LEFT"
-                      elif received_x > right_bound:
-                           current_command = "MOVE_UP_RIGHT"
-                      else:
-                           current_command = "MOVE_UP"
-                 else: # Zone du milieu (verticalement), hors zone morte centrale
-                      if received_x < left_bound:
-                           current_command = "MOVE_LEFT"
-                      elif received_x > right_bound:
-                           current_command = "MOVE_RIGHT"
+            # Calcul des commandes proportionnelles
+            command_pan = self.kp_pan * error_x
+            command_lift = -self.kp_lift * error_y
 
-        # --- 2. Publier la commande SEULEMENT si elle a changé ---
-        if current_command != self.last_command:
-            # Logger la nouvelle commande
-            if current_command == "IDLE":
-                self.get_logger().info('No target detected. Command: IDLE')
-            elif current_command == "CENTERED":
-                self.get_logger().info(f'Target is centered. Command: {current_command}')
-            else:
-                # Utiliser WARN pour voir facilement les demandes de mouvement
-                self.get_logger().warn(f'Target at ({received_x:.0f}, {received_y:.0f}). Command: {current_command}')
+            control_signal.x = command_pan
+            control_signal.y = command_lift
+            control_signal.z = 0.0 # Non utilisé pour l'instant
 
-            # Créer le message String et le publier
-            command_msg = String()
-            command_msg.data = current_command if current_command is not None else "UNKNOWN"
-            self.command_publisher.publish(command_msg)
+            # Logger les infos pour le débogage
+            self.get_logger().info(f'Target at ({cx:.0f}, {cy:.0f}) -> Error(x={error_x:.1f}, y={error_y:.1f}) -> Signal(x={command_pan:.2f}, y={command_lift:.2f})')
 
-            # Mettre à jour la dernière commande publiée
-            self.last_command = current_command
+        # Toujours publier le signal de contrôle (calculé ou nul)
+        self.control_signal_publisher.publish(control_signal)
 
 
 def main(args=None):
