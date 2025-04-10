@@ -100,7 +100,7 @@ class VisionNode(Node):
             try:
             
             	# --- 0. Retourner l'image ---
-                flip_code = -1
+                flip_code = 1
                 frame = cv2.flip(frame, flip_code)
 
                 # --- 1. Publication de l'image originale ---
@@ -122,9 +122,18 @@ class VisionNode(Node):
                 # --- 4. Combinaison des deux masques (OU logique) ---
                 red_mask = cv2.bitwise_or(mask1, mask2)
 
+                # 4.1. Définir un noyau (structuring element) - 5x5 est un bon point de départ
+                kernel = np.ones((5,5), np.uint8)
+
+                # 4.2. Appliquer l'érosion (enlève le bruit blanc)
+                mask_eroded = cv2.erode(red_mask, kernel, iterations = 1)
+
+                # 4.3. Appliquer la dilatation (restaure la taille de l'objet principal)
+                mask_processed = cv2.dilate(mask_eroded, kernel, iterations = 1)
+
                 # --- 5. Trouver les contours dans le masque rouge ---
                 # Utiliser _ pour ignorer la hiérarchie si on ne s'en sert pas
-                contours, _ = cv2.findContours(red_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                contours, _ = cv2.findContours(mask_processed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
                 # --- 6. Traitement si des contours sont trouvés ---
                 if contours:
