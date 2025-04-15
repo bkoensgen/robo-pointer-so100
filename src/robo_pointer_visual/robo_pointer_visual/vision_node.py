@@ -24,7 +24,7 @@ class VisionNode(Node):
 
         # --- Paramètres de Configuration ---
         # Déclare des paramètres ROS 2 pour la configuration (plus flexible)
-        self.declare_parameter('camera_index', 0)
+        self.declare_parameter('camera_index', '0')
         self.declare_parameter('publish_rate_hz', 30.0)
         self.declare_parameter('detection_threshold_area', 500)
         # Paramètres pour les seuils HSV (plus facile à ajuster via les paramètres ROS)
@@ -34,7 +34,7 @@ class VisionNode(Node):
         self.declare_parameter('hsv_upper_red2', [180, 255, 255])
 
         # Récupérer les valeurs des paramètres
-        self.camera_index = self.get_parameter('camera_index').get_parameter_value().integer_value
+        self.camera_index = self.get_parameter('camera_index').get_parameter_value().string_value
         self.publish_rate = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
         self.min_area = self.get_parameter('detection_threshold_area').get_parameter_value().integer_value
         hsv_lower_red1 = self.get_parameter('hsv_lower_red1').get_parameter_value().integer_array_value
@@ -50,18 +50,23 @@ class VisionNode(Node):
 
         # --- Initialisation OpenCV & CvBridge ---
         self.bridge = CvBridge()
+        camera_capture_source = None
+        try:
+            # Essayer de convertir la chaîne en entier
+            camera_capture_source = int(self.camera_index)
+            self.get_logger().info(f"Parameter 'camera_index' is an integer: {camera_capture_source}. Using as camera index.")
+        except ValueError:
+            # Si la conversion échoue, on suppose que c'est un chemin de périphérique
+            camera_capture_source = self.camera_index
+            self.get_logger().info(f"Parameter 'camera_index' is a string: '{camera_capture_source}'. Using as device path.")
         try:
             self.cap = cv2.VideoCapture(self.camera_index)
             if not self.cap.isOpened():
-                raise IOError(f"Cannot open webcam index {self.camera_index}")
-            self.get_logger().info(f'Successfully opened webcam index {self.camera_index}')
+                raise IOError(f"Cannot open webcam using source: {camera_capture_source}")
+            self.get_logger().info(f'Successfully opened webcam using source: {camera_capture_source}')
         except Exception as e:
             self.get_logger().error(f'Failed to open webcam: {e}')
-            # Arrêter proprement si la caméra ne s'ouvre pas
-            # On ne peut pas utiliser rclpy.shutdown() dans __init__ directement
-            # Il faudrait une meilleure gestion d'erreur, mais pour l'instant on quitte.
-            # Une meilleure approche serait de lever une exception attrapée dans main().
-            raise e # Propage l'erreur pour arrêter
+            raise e
 
         # --- Publishers ROS ---
         self.image_publisher = self.create_publisher(Image, '/image_raw', 10)
