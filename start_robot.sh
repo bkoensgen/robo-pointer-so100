@@ -50,7 +50,7 @@ tmux send-keys -t $SESSION_NAME:nodes.0 "$SETUP_CMDS && ros2 run robo_pointer_vi
 tmux send-keys -t $SESSION_NAME:nodes.1 "$SETUP_CMDS && ros2 run robo_pointer_visual robot_controller_node" C-m
 
 # Panneau 2: real_robot_interface (CORRIGÉ - avec log DEBUG)
-tmux send-keys -t $SESSION_NAME:nodes.2 "$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface" C-m
+tmux send-keys -t $SESSION_NAME:nodes.2 "$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args -p yw_increment_scale:=0.00001 > ~/real_robot_interface_test1.log 2>&1" C-m
 
 # Optionnel: Sélectionner une disposition (ex: tiled pour essayer d'égaliser la taille)
 tmux select-layout -t $SESSION_NAME:nodes tiled
