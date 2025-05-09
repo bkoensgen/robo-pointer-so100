@@ -20,7 +20,7 @@ class RobotControllerNode(Node):
         self.declare_parameter('image_height', 480) # Valeur par défaut 480
 
         # Nouveaux paramètres pour les gains proportionnels
-        self.declare_parameter('kp_pan', 0.2) # Gain pour le mouvement horizontal (pan)
+        self.declare_parameter('kp_pan', 0.1) # Gain pour le mouvement horizontal (pan)
         self.declare_parameter('kp_lift', 0.2) # Gain pour le mouvement vertical (lift)
 
         # Récupérer les valeurs des paramètres
@@ -73,7 +73,7 @@ class RobotControllerNode(Node):
             error_y = cy - center_y
 
             # Calcul des commandes proportionnelles
-            command_pan = self.kp_pan * error_x
+            command_pan = -self.kp_pan * error_x
             command_lift = -self.kp_lift * error_y
 
             control_signal.x = command_pan
