@@ -1,0 +1,24 @@
+<launch>
+  <!-- Argument 'model' non utilisé ici, peut être ignoré -->
+  <arg name="model" />
+
+  <!-- 1. Charger l'URDF dans le paramètre 'robot_description' -->
+  <param name="robot_description"
+         textfile="$(find so100_description)/urdf/SO_5DOF_ARM100_8j_URDF.SLDASM.urdf" />
+
+  <!-- 2. Lancer le GUI pour contrôler manuellement les joints (pour tests) -->
+  <node name="joint_state_publisher_gui"
+        pkg="joint_state_publisher_gui"
+        type="joint_state_publisher_gui" />
+
+  <!-- 3. Lancer le nœud qui publie les transformations TF à partir des /joint_states -->
+  <node name="robot_state_publisher"
+        pkg="robot_state_publisher"
+        type="robot_state_publisher" />
+
+  <!-- 4. Lancer RViz avec une configuration spécifique -->
+  <node name="rviz"
+        pkg="rviz"
+        type="rviz"
+        args="-d $(find so100_description)/config/urdf.rviz" />
+</launch>
