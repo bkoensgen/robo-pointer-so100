@@ -612,6 +612,35 @@ class RealRobotInterfaceNode(Node):
         joint_state_msg.position = positions_for_urdf
         self.joint_state_publisher.publish(joint_state_msg)
 
+    def _calculate_gravity_feedforward_adj_deg(self, current_theta1_deg_phys: float, current_theta2_deg_phys: float) -> Tuple[float, float]:
+        """
+        Calculates the angle adjustments (in degrees) for gravity feedforward
+        compensation for shoulder_lift (ID2) and elbow_flex (ID3).
+
+        This is a simplified model where the gains K_gravity_ff_idX are tuned
+        to implicitly account for mass and lever arm effects, driven by the
+        cosine of the link's angle with respect to the horizontal.
+
+        Args:
+            current_theta1_deg_phys: Current physical angle of shoulder_lift (Pitch/ID2) in degrees.
+                                     0 deg = arm horizontal forward, positive is up.
+            current_theta2_deg_phys: Current physical angle of elbow_flex (Elbow/ID3) in degrees.
+                                     0 deg = arm fully extended (L1 and L2 aligned).
+
+        Returns:
+            Tuple[float, float]: (gravity_ff_adj_id2_deg, gravity_ff_adj_id3_deg)
+                                 Angle adjustments in degrees.
+        """
+
+        q1_phys_rad = math.radians(current_theta1_deg_phys)
+        q2_phys_rad = math.radians(current_theta2_deg_phys)
+
+        gravity_ff_adj_id2_deg = self.K_gravity_ff_id2 * math.cos(q1_phys_rad)
+        absolute_forearm_angle_rad = q1_phys_rad + q2_phys_rad
+        gravity_ff_adj_id3_deg = self.K_gravity_ff_id3 * math.cos(absolute_forearm_angle_rad)
+
+        return gravity_ff_adj_id2_deg, gravity_ff_adj_id3_deg
+
     def control_signal_callback(self, msg: Vector3):
         if not (self.port_handler and self.packet_handler and self.calibration_data and \
                 self.group_writer and self.group_reader and self.reader_motors_ok):
@@ -682,6 +711,10 @@ class RealRobotInterfaceNode(Node):
         except Exception as e_apply_calib_stage:
             self.get_logger().error(f"Exception during apply_calibration: {e_apply_calib_stage}")
             return
+        
+        # Calculate gravity feedforward angle adjustments based on current physical angles
+        gravity_ff_angle_adj_id2_deg, gravity_ff_angle_adj_id3_deg = \
+            self._calculate_gravity_feedforward_adj_deg(current_theta1_deg, current_theta2_deg)
 
         # --- Publish Joint States for RViz (using angles of MOTORS_TO_COMMAND) ---
         self._publish_joint_states(calibrated_angles_deg)
