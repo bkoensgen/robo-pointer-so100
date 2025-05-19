@@ -94,7 +94,7 @@ def generate_launch_description():
 
     use_jsp_gui_arg = DeclareLaunchArgument(
         'use_jsp_gui',
-        default_value='true',
+        default_value='false',
         description='Flag to enable joint_state_publisher_gui')
 
     rviz_config_file_arg = DeclareLaunchArgument(
