@@ -266,7 +266,7 @@ class RealRobotInterfaceNode(Node):
 
         self.robot_model_urdf = None
         self.link_inertial_params = {}
-
+        
         if scs is None or GroupSyncRead is None or GroupSyncWrite is None:
              self.get_logger().fatal("scservo_sdk or required Group classes not found. Aborting initialization.")
              raise ImportError("scservo_sdk is required but not installed or incomplete.")
@@ -500,11 +500,16 @@ class RealRobotInterfaceNode(Node):
         self.declare_parameter('ki_angular_comp_id2', 0.00025) # Corrected from 0.0003 to 0.00025 as per log
         self.declare_parameter('integral_angular_comp_id2_max_output_adj', 3.0)
         self.declare_parameter('integral_angular_comp_id2_min_output_adj', -3.0)
+        self.declare_parameter('k_gravity_feedforward_id2', 0.0) 
+        self.declare_parameter('k_gravity_feedforward_id3', 0.0) 
         self.Kp_angular_comp_ID2 = self.get_parameter('kp_angular_comp_id2').get_parameter_value().double_value
         self.Ki_angular_comp_ID2 = self.get_parameter('ki_angular_comp_id2').get_parameter_value().double_value
         self.integral_angular_comp_ID2_max_output_adj_val = self.get_parameter('integral_angular_comp_id2_max_output_adj').get_parameter_value().double_value
         self.integral_angular_comp_ID2_min_output_adj_val = self.get_parameter('integral_angular_comp_id2_min_output_adj').get_parameter_value().double_value
-        
+        self.K_gravity_ff_id2 = self.get_parameter('k_gravity_feedforward_id2').get_parameter_value().double_value
+        self.K_gravity_ff_id3 = self.get_parameter('k_gravity_feedforward_id3').get_parameter_value().double_value
+
+
         # Initialize PI controller state variables
         self.integral_accumulator_y_cartesian = 0.0
         self.last_y_cartesian_control_time = self.get_clock().now()
