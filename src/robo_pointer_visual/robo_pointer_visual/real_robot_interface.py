@@ -5,6 +5,8 @@ import numpy as np
 import math
 import time
 import json
+import os
+import xacro
 from pathlib import Path
 import enum
 import rclpy
@@ -13,6 +15,7 @@ from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import JointState
 import traceback 
 from ament_index_python.packages import get_package_share_directory
+from urdf_parser_py.urdf import URDF
 
 # Utilisation directe de FeetechMotorsBus
 from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus, FeetechMotorsBusConfig
@@ -261,6 +264,9 @@ class RealRobotInterfaceNode(Node):
             'Jaw': 0.0             # gripper (ID6) - Calibrate if needed
         }
 
+        self.robot_model_urdf = None
+        self.link_inertial_params = {}
+
         if scs is None or GroupSyncRead is None or GroupSyncWrite is None:
              self.get_logger().fatal("scservo_sdk or required Group classes not found. Aborting initialization.")
              raise ImportError("scservo_sdk is required but not installed or incomplete.")
@@ -270,6 +276,7 @@ class RealRobotInterfaceNode(Node):
             self._connect_motor_bus()
             self._configure_motors_srl()
             self._initialize_group_sync_handlers()
+            self._load_and_parse_urdf_parameters()
             self._initialize_motors_torque_and_pose()
             self._declare_and_get_ros_parameters()
             
@@ -354,6 +361,63 @@ class RealRobotInterfaceNode(Node):
         if not self.reader_motors_ok:
              self.get_logger().error("Could not add all MOTORS_TO_COMMAND to GroupSyncRead handler.")
              # This might not be fatal if control logic can handle missing reads, but it's a problem.
+
+    def _load_and_parse_urdf_parameters(self):
+        """
+        Loads the robot's URDF file from the 'so100_description' package,
+        parses it, and extracts inertial parameters for relevant links.
+        """
+        self.get_logger().info("Loading and parsing URDF for inertial parameters...")
+
+        links_to_extract_inertial_data = [
+            "Upper_Arm",        # Enfant du joint 'Pitch' (ID2)
+            "Lower_Arm",        # Enfant du joint 'Elbow' (ID3)
+            "Wrist_Pitch_Roll", # Enfant du joint 'Wrist_Pitch' (ID4)
+            "Fixed_Jaw",        # Enfant du joint 'Wrist_Roll' (ID5)
+            "Moving_Jaw"        # Enfant du joint 'Jaw' (ID6)
+        ]
+
+        try:
+            so100_description_pkg_share_dir = get_package_share_directory("so100_description")
+            urdf_file_name_in_pkg = 'SO_5DOF_ARM100_8j_URDF.SLDASM.urdf'
+            full_urdf_path = os.path.join(so100_description_pkg_share_dir, 'urdf', urdf_file_name_in_pkg)
+            self.get_logger().info(f"Attempting to process URDF/XACRO from: {full_urdf_path}")
+            
+            xml_doc = xacro.process_file(full_urdf_path)
+            robot_description_xml_str = xml_doc.toprettyxml(indent="    ")
+            self.robot_model_urdf = URDF.from_xml_string(robot_description_xml_str)
+            self.get_logger().info("URDF model loaded and parsed successfully.")
+            
+            for link_name in links_to_extract_inertial_data:
+                link_object = self.robot_model_urdf.get_link(link_name)
+                
+                if link_object and link_object.inertial:
+                    self.link_inertial_params[link_name] = {
+                        "mass": link_object.inertial.mass,
+                        "com_in_link_frame": list(link_object.inertial.origin.xyz)
+                    }
+                    self.get_logger().info(
+                        f"  Extracted for Link '{link_name}': "
+                        f"Mass: {self.link_inertial_params[link_name]['mass']}, "
+                        f"COM in Link Frame: {self.link_inertial_params[link_name]['com_in_link_frame']}")
+                else:
+                    self.get_logger().warn(f"Link '{link_name}' not found or missing inertial data.")
+                    self.link_inertial_params[link_name] = {'mass': 0.0, 'com_in_link_frame': [0.0, 0.0, 0.0]}
+            
+        except FileNotFoundError:
+            self.get_logger().error(f"URDF file not found at processed path derived from '{full_urdf_path}'. Cannot load inertial params.")
+            self._set_default_inertial_params(links_to_extract_inertial_data)
+        
+        except Exception as e:
+            self.get_logger().error(f"Failed to load or parse URDF: {e}")
+            traceback.print_exc()
+            self._set_default_inertial_params(links_to_extract_inertial_data)
+    
+    def _set_default_inertial_params(self, link_names_list):
+        """Helper to set default inertial params if URDF parsing fails."""
+        self.get_logger().warn("Setting default (zero mass) inertial parameters due to URDF loading/parsing failure.")
+        for link_name in link_names_list:
+            self.link_inertial_params[link_name] = {'mass': 0.0, 'com_in_link_frame': [0.0, 0.0, 0.0]}
 
     def _initialize_motors_torque_and_pose(self):
         motors_to_init_torque = MOTOR_NAMES_ORDER # Enable torque for all motors
