@@ -389,7 +389,7 @@ class RealRobotInterfaceNode(Node):
             self.get_logger().info("URDF model loaded and parsed successfully.")
             
             for link_name in links_to_extract_inertial_data:
-                link_object = self.robot_model_urdf.get_link(link_name)
+                link_object = self.robot_model_urdf.link_map.get(link_name)
                 
                 if link_object and link_object.inertial:
                     self.link_inertial_params[link_name] = {
