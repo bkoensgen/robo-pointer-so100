@@ -784,13 +784,17 @@ class RealRobotInterfaceNode(Node):
                     total_angle_adjustment_id2 = p_adj_id2 + i_adj_id2_clipped
                     target_theta1_deg_compensated = target_th1_deg_from_ik + total_angle_adjustment_id2
                     
+                    target_theta1_deg_final_with_gravity = target_theta1_deg_compensated_by_pi + gravity_ff_angle_adj_id2_deg
+                    target_theta2_deg_final_with_gravity = target_th2_deg_from_ik + gravity_ff_angle_adj_id3_deg
+
                     self.get_logger().debug(
                         f"ID2 Ang.Comp: Err_th1={error_angle_id2:.1f}d, TotalAdj={total_angle_adjustment_id2:.1f}d, "
                         f"Th1_IK={target_th1_deg_from_ik:.1f}d -> Th1_FinalComp={target_theta1_deg_compensated:.1f}d"
                     )
+
                     
-                    target_theta1_deg = np.clip(target_theta1_deg_compensated, self.lift_min, self.lift_max)
-                    target_theta2_deg = np.clip(target_th2_deg_from_ik, self.elbow_min, self.elbow_max)
+                    target_theta1_deg = np.clip(target_theta1_deg_final_with_gravity, self.lift_min, self.lift_max)
+                    target_theta2_deg = np.clip(target_theta2_deg_final_with_gravity, self.elbow_min, self.elbow_max)
                     
                     new_target_calculated_this_cycle = True
                 else: 
