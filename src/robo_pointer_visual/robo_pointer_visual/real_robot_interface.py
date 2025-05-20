@@ -1,5 +1,5 @@
 # Fichier: ~/ros2_ws/src/robo_pointer_visual/robo_pointer_visual/real_robot_interface.py
-# Version: Finalized_V1_With_Full_JointState_Offsets
+# Version: Finalized_V2_With_GravityCompensation
 
 import numpy as np
 import math
@@ -16,6 +16,7 @@ from sensor_msgs.msg import JointState
 import traceback 
 from ament_index_python.packages import get_package_share_directory
 from urdf_parser_py.urdf import URDF
+from typing import Tuple, Optional
 
 # Utilisation directe de FeetechMotorsBus
 from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus, FeetechMotorsBusConfig
@@ -500,7 +501,7 @@ class RealRobotInterfaceNode(Node):
         self.declare_parameter('ki_angular_comp_id2', 0.00025) # Corrected from 0.0003 to 0.00025 as per log
         self.declare_parameter('integral_angular_comp_id2_max_output_adj', 3.0)
         self.declare_parameter('integral_angular_comp_id2_min_output_adj', -3.0)
-        self.declare_parameter('k_gravity_feedforward_id2', 0.0) 
+        self.declare_parameter('k_gravity_feedforward_id2', 12.0) 
         self.declare_parameter('k_gravity_feedforward_id3', 0.0) 
         self.Kp_angular_comp_ID2 = self.get_parameter('kp_angular_comp_id2').get_parameter_value().double_value
         self.Ki_angular_comp_ID2 = self.get_parameter('ki_angular_comp_id2').get_parameter_value().double_value
@@ -784,7 +785,7 @@ class RealRobotInterfaceNode(Node):
                     total_angle_adjustment_id2 = p_adj_id2 + i_adj_id2_clipped
                     target_theta1_deg_compensated = target_th1_deg_from_ik + total_angle_adjustment_id2
                     
-                    target_theta1_deg_final_with_gravity = target_theta1_deg_compensated_by_pi + gravity_ff_angle_adj_id2_deg
+                    target_theta1_deg_final_with_gravity = target_theta1_deg_compensated + gravity_ff_angle_adj_id2_deg
                     target_theta2_deg_final_with_gravity = target_th2_deg_from_ik + gravity_ff_angle_adj_id3_deg
 
                     self.get_logger().debug(
