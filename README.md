@@ -2,8 +2,6 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Statut du Projet : 🛠️ Travail en Cours / Débogage Actif 🛠️**
-
 Ce projet vise à contrôler un bras robotique SO-ARM100 (version LeRobot/Hugging Face) à l'aide d'une caméra montée sur le poignet ("eye-in-hand") pour détecter et suivre un objet de couleur rouge. Il s'agit d'un projet personnel d'apprentissage dans le cadre d'une reconversion vers la robotique logicielle.
 
 **Objectif Principal :**
