@@ -195,8 +195,7 @@ Sous licence Apache 2.0. Voir le fichier `LICENSE`.
 ## Contact
 
 Benjamin Koensgen – [b.koensgen@gmail.com](mailto:b.koensgen@gmail.com)
-LinkedIn : linkedin.com/in/benjamin-koensgen-6459711b1
-Dépôt principal : [https://github.com/bkoensgen/robo-pointer-so100](https://github.com/bkoensgen/robo-pointer-so100)
+LinkedIn : linkedin.com/in/benjamin-koensgen
 
 ## Dépôt Matériel SO-ARM100
 
