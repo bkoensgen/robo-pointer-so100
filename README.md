@@ -192,7 +192,7 @@ Sous licence Apache 2.0. Voir le fichier `LICENSE`.
 
 ## Contact
 
-Benjamin Koensgen – [b.koensgen@gmail.com](mailto:b.koensgen@gmail.com)
+Benjamin Koensgen – [benjamin.koensgen@gmail.com](mailto:b.koensgen@gmail.com)
 LinkedIn : linkedin.com/in/benjamin-koensgen
 
 ## Dépôt Matériel SO-ARM100
