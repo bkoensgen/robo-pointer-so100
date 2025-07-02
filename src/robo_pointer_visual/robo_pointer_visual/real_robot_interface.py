@@ -65,7 +65,7 @@ SCS_CONTROL_TABLE = {
 # Motors actively controlled by the IK/PI logic
 MOTORS_TO_COMMAND = ["shoulder_pan", "shoulder_lift", "elbow_flex"]
 # Initial pose for the controlled motors when holding
-INITIAL_HOLD_POSE_DEG = np.array([0.0, 90.0, 90.0], dtype=np.float32)
+INITIAL_HOLD_POSE_DEG = np.array([0.0, 107.0, 85.0], dtype=np.float32)
 # Initial position for wrist_flex if set independently at startup
 INITIAL_WRIST_POS_DEG = 0.0
 
