@@ -1,235 +1,207 @@
-# Fichier: ~/ros2_ws/src/robo_pointer_visual/robo_pointer_visual/vision_node.py
-# Version: Utilise YOLOv8 pour un suivi d'objet robuste
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 import cv2
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 from geometry_msgs.msg import Point
-
 from ultralytics import YOLO
 
 class VisionNode(Node):
     """
-    Ce nœud lit les images d'une webcam (en gérant les déconnexions),
-    détecte un objet cible spécifié à l'aide de YOLOv8, et publie :
-    - L'image brute sur /image_raw
-    - L'image avec les détections dessinées sur /image_debug
-    - Les coordonnées (x, y) du centre de l'objet détecté sur /detected_target_point
-      (avec x=-1, y=-1 si aucune cible ou caméra non disponible).
+    Nœud de vision par ordinateur.
+    - Capture le flux vidéo d'une caméra.
+    - Utilise un modèle YOLO pour détecter des objets.
+    - Applique un filtre de persistance pour stabiliser la détection.
+    - Publie l'image brute, une image de débogage et les coordonnées du centre de la cible.
     """
     def __init__(self):
-        # Initialisation du nœud ROS 2
         super().__init__('vision_node')
-        self.get_logger().info('Vision node with YOLOv8 starting, attempting to access webcam...')
+        self.get_logger().info('Vision node starting.')
 
-        # --- Paramètres de Configuration ---
-        self.declare_parameter('camera_index', '/dev/robot_camera') # Défaut: utiliser le lien symbolique
-        self.declare_parameter('publish_rate_hz', 20.0) # Fréquence de publication
-        self.declare_parameter('yolo_model', 'yolov8n.pt') # Modèle à utiliser (ex: yolov8n.pt pour la version nano)
-        self.declare_parameter('target_class_name', 'cup') # Classe d'objet à détecter (ex: 'cup', 'bottle', 'cell phone')
-        self.declare_parameter('confidence_threshold', 0.6) # Seuil de confiance minimal pour valider une détection
-        
-        # Récupérer les valeurs des paramètres
-        self.camera_index_param = self.get_parameter('camera_index').get_parameter_value().string_value
+        # --- Paramètres ---
+        self.declare_parameter('camera_index', '/dev/robot_camera')
+        self.declare_parameter('publish_rate_hz', 20.0)
+        self.declare_parameter('yolo_model', 'yolov8n.pt')
+        self.declare_parameter('target_class_name', 'bottle')
+        self.declare_parameter('confidence_threshold', 0.5)
+        self.declare_parameter('flip_code', -1)
+        self.declare_parameter('persistence_frames_to_acquire', 3)
+        self.declare_parameter('persistence_frames_to_lose', 5)
+
+        # Récupération des paramètres
+        camera_index_param = self.get_parameter('camera_index').get_parameter_value().string_value
         self.publish_rate = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
         yolo_model_name = self.get_parameter('yolo_model').get_parameter_value().string_value
         self.target_class_name = self.get_parameter('target_class_name').get_parameter_value().string_value
         self.confidence_threshold = self.get_parameter('confidence_threshold').get_parameter_value().double_value
+        self.flip_code = self.get_parameter('flip_code').get_parameter_value().integer_value
+        self.frames_to_acquire = self.get_parameter('persistence_frames_to_acquire').get_parameter_value().integer_value
+        self.frames_to_lose = self.get_parameter('persistence_frames_to_lose').get_parameter_value().integer_value
         
-        self.get_logger().info(f"Using YOLO Model: {yolo_model_name}")
         self.get_logger().info(f"Targeting Class: '{self.target_class_name}' with confidence > {self.confidence_threshold}")
 
-        # --- Initialisation du modèle YOLOv8 ---
+        # Initialisations
         try:
             self.model = YOLO(yolo_model_name)
-            self.get_logger().info('YOLOv8 model loaded successfully.')
+            self.class_names = self.model.names
         except Exception as e:
-            self.get_logger().fatal(f'Failed to load YOLO model: {e}. Shutting down.')
-            # Une exception ici est critique, on ne peut pas continuer.
-            if rclpy.ok():
-                rclpy.shutdown()
-            return
-
-        # --- Initialisation OpenCV & CvBridge ---
+            self.get_logger().fatal(f'Failed to load YOLO model: {e}.'); rclpy.shutdown(); return
+        
         self.bridge = CvBridge()
-        self.camera_capture_source = None # Variable membre pour stocker la source (int ou str)
-        self.cap = None # Objet VideoCapture, initialisé à None
-
-        # Déterminer la source de capture à partir du paramètre
-        try:
-            numeric_index = int(self.camera_index_param)
-            self.camera_capture_source = numeric_index
-            self.get_logger().info(f"Parameter 'camera_index' is an integer: {self.camera_capture_source}.")
-        except ValueError:
-            self.camera_capture_source = self.camera_index_param
-            self.get_logger().info(f"Parameter 'camera_index' is a string: '{self.camera_capture_source}'.")
-
-        # Tenter une première ouverture de la caméra
+        self.cap = None
+        try: self.camera_capture_source = int(camera_index_param)
+        except ValueError: self.camera_capture_source = camera_index_param
         self.reopen_capture()
+        
+        self.target_is_acquired = False
+        self.detection_counter = 0
+        self.last_known_target_point = Point(x=-1.0, y=-1.0, z=0.0)
 
-        # --- Publishers ROS ---
         self.image_publisher = self.create_publisher(Image, '/image_raw', 10)
         self.debug_image_publisher = self.create_publisher(Image, '/image_debug', 10)
         self.target_publisher = self.create_publisher(Point, '/detected_target_point', 10)
-        self.get_logger().info('Publishing images on /image_raw, /image_debug')
-        self.get_logger().info('Publishing target coordinates on /detected_target_point')
-
-        # --- Timer pour la boucle principale ---
-        if self.publish_rate <= 0:
-             self.get_logger().warn("Publish rate is zero or negative, timer not created.")
-             self.timer = None
-        else:
-             self.timer_period = 1.0 / self.publish_rate
-             self.timer = self.create_timer(self.timer_period, self.timer_callback)
-             self.get_logger().info(f'Processing images at ~{self.publish_rate:.1f} Hz')
-
+        self.timer = self.create_timer(1.0 / self.publish_rate if self.publish_rate > 0 else 0.05, self.timer_callback)
+        self.get_logger().info('YOLOv8 vision node running...')
 
     def reopen_capture(self):
-        """Tente d'ouvrir ou de rouvrir la capture vidéo."""
-        if self.cap is not None and self.cap.isOpened():
-            self.get_logger().info('Releasing previous capture device...')
-            self.cap.release()
+        if self.cap and self.cap.isOpened(): self.cap.release()
+        self.cap = cv2.VideoCapture(self.camera_capture_source)
+        if not (self.cap and self.cap.isOpened()):
+            self.get_logger().warn(f"Failed to open webcam: {self.camera_capture_source}", throttle_duration_sec=5)
             self.cap = None
-
-        try:
-            self.get_logger().info(f"Attempting to open capture device: {self.camera_capture_source}")
-            self.cap = cv2.VideoCapture(self.camera_capture_source)
-
-            if self.cap is None or not self.cap.isOpened():
-                self.get_logger().warn(f"Failed to open webcam: {self.camera_capture_source}. Will retry later.")
-                self.cap = None
-            else:
-                self.get_logger().info(f'Successfully opened webcam: {self.camera_capture_source}')
-        except Exception as e:
-            self.get_logger().error(f'Exception while trying to open webcam: {e}')
-            self.cap = None
-
+        else:
+            self.get_logger().info(f'Successfully opened webcam: {self.camera_capture_source}')
 
     def timer_callback(self):
-        """
-        Callback appelé périodiquement par le timer.
-        Lit une image, utilise YOLOv8 pour détecter la cible, et publie les résultats.
-        Tente de rouvrir la caméra si la lecture échoue.
-        """
-        target_point_msg = Point(x=-1.0, y=-1.0, z=0.0)
-        current_stamp = self.get_clock().now().to_msg()
-        
-        # --- Vérification et lecture de la caméra ---
-        if self.cap is None or not self.cap.isOpened():
-            self.get_logger().warn("Capture device not open. Attempting to reopen...", throttle_duration_sec=5)
+        """Callback principal: récupère une image, la traite et publie les résultats."""
+        if self.cap is None:
             self.reopen_capture()
-            if self.cap is None or not self.cap.isOpened():
-                 self.target_publisher.publish(target_point_msg)
-                 return
-
-        try:
-            ret, frame = self.cap.read()
-            if not ret or frame is None:
-                self.get_logger().warn("Failed to grab frame, possible disconnect. Releasing capture object.")
-                if self.cap: self.cap.release()
-                self.cap = None
-                self.target_publisher.publish(target_point_msg)
+            if self.cap is None:
+                self.update_persistence(False)
+                self.target_publisher.publish(self.last_known_target_point)
                 return
-        except Exception as e_read:
-             self.get_logger().error(f"Exception during frame reading: {e_read}")
-             if self.cap: self.cap.release()
-             self.cap = None
-             self.target_publisher.publish(target_point_msg)
-             return
 
-        # --- Traitement de l'image ---
-        try:
-            # Retourner l'image si nécessaire
-            frame = cv2.flip(frame, -1)
+        ret, frame = self.cap.read()
+        if not ret or frame is None:
+            self.get_logger().warn("Failed to grab frame.", throttle_duration_sec=5)
+            if self.cap: self.cap.release()
+            self.cap = None
+            self.update_persistence(False)
+            self.target_publisher.publish(self.last_known_target_point)
+            return
 
-            # Publication de l'image brute
-            ros_image_msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-            ros_image_msg.header.stamp = current_stamp
-            ros_image_msg.header.frame_id = 'camera_frame'
-            self.image_publisher.publish(ros_image_msg)
+        # Exécuter la logique de traitement et de publication
+        self.process_and_publish_frame(frame)
 
-            # --- Détection et suivi avec YOLOv8 ---
-            # 'persist=True' permet au tracker de se souvenir des objets entre les appels.
-            # 'verbose=False' évite d'imprimer les logs de YOLO dans la console ROS.
-            results = self.model.track(frame, persist=True, verbose=False)
+    def process_and_publish_frame(self, frame):
+        """Traite une image, met à jour l'état et publie les topics nécessaires."""
+        # 1. Exécuter l'inférence YOLO sur l'image brute
+        results = self.model(frame, verbose=False, conf=self.confidence_threshold)
 
-            # La méthode .plot() dessine les boîtes, labels et IDs directement sur l'image.
-            debug_frame = results[0].plot()
-
-            target_found = False
-            highest_confidence = 0.0 # Pour suivre uniquement l'objet le plus probable
-
-            # Vérifier si des objets ont été détectés et s'ils ont un ID de suivi
-            if results[0].boxes is not None and results[0].boxes.id is not None:
-                boxes = results[0].boxes.xywh.cpu() # Format: [centre_x, centre_y, largeur, hauteur]
-                confidences = results[0].boxes.conf.cpu()
-                class_ids = results[0].boxes.cls.cpu().tolist()
-                
-                for box, conf, cls_id in zip(boxes, confidences, class_ids):
-                    class_name = self.model.names[int(cls_id)]
-                    
-                    if class_name == self.target_class_name and conf > self.confidence_threshold:
-                        if conf > highest_confidence:
-                            highest_confidence = conf
-                            target_point_msg.x = float(box[0])
-                            target_point_msg.y = float(box[1])
-                            target_found = True
-
-            if target_found:
-                self.get_logger().debug(f"Target '{self.target_class_name}' found at ({target_point_msg.x:.0f}, {target_point_msg.y:.0f}) with confidence {highest_confidence:.2f}")
-            else:
-                self.get_logger().debug('No valid target detected in this frame.')
-            
-            # Publication de l'image de debug
-            debug_image_msg = self.bridge.cv2_to_imgmsg(debug_frame, encoding='bgr8')
-            debug_image_msg.header.stamp = current_stamp
-            debug_image_msg.header.frame_id = 'camera_frame'
-            self.debug_image_publisher.publish(debug_image_msg)
-
-        except CvBridgeError as e:
-            self.get_logger().error(f'CvBridge Error: {e}')
-        except Exception as e_proc:
-             self.get_logger().error(f'Error during image processing with YOLO: {e_proc}')
-             target_point_msg.x = -1.0
-             target_point_msg.y = -1.0
+        # 2. Préparer une image de débogage et y dessiner les résultats
+        debug_frame = frame.copy()
+        best_target_center, detection_this_frame = self.draw_and_find_target(debug_frame, results)
         
-        # Publication des coordonnées de la cible (trouvée ou par défaut)
-        self.target_publisher.publish(target_point_msg)
+        # 3. Mettre à jour la persistance de la cible
+        self.update_persistence(detection_this_frame)
+        if detection_this_frame:
+            self.last_known_target_point.x = float(best_target_center[0])
+            self.last_known_target_point.y = float(best_target_center[1])
 
+        # 4. Gérer le 'flip' des images juste avant la publication
+        if self.flip_code != 99:
+            debug_frame = cv2.flip(debug_frame, self.flip_code)
+        
+        raw_frame_to_publish = frame.copy()
+        if self.flip_code != 99:
+            raw_frame_to_publish = cv2.flip(raw_frame_to_publish, self.flip_code)
+        
+        # 5. Publier tous les messages
+        self.image_publisher.publish(self.bridge.cv2_to_imgmsg(raw_frame_to_publish, "bgr8"))
+        self.debug_image_publisher.publish(self.bridge.cv2_to_imgmsg(debug_frame, "bgr8"))
 
+        if not self.target_is_acquired:
+            self.target_publisher.publish(Point(x=-1.0, y=-1.0, z=0.0))
+        else:
+            self.target_publisher.publish(self.last_known_target_point)
+
+    def draw_and_find_target(self, debug_frame, results):
+        """
+        Dessine les boîtes de détection sur l'image de débogage et trouve
+        la meilleure cible (la plus grande de la classe voulue).
+        """
+        best_target_center = None
+        largest_area = 0
+        detection_this_frame = False
+
+        status_text = f"Status: Searching ({self.detection_counter})"
+        status_color = (0, 255, 255) # Jaune
+        if self.target_is_acquired:
+            status_text = "Status: ACQUIRED"
+            status_color = (0, 255, 0) # Vert
+        cv2.putText(debug_frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, status_color, 2)
+            
+        for box in results[0].boxes:
+            class_id = int(box.cls[0])
+            class_name = self.class_names[class_id]
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            
+            box_color = (255, 100, 100)
+            if class_name == self.target_class_name:
+                detection_this_frame = True
+                box_color = (0, 255, 255)
+                if self.target_is_acquired:
+                    box_color = (0, 255, 0)
+                
+                area = (x2 - x1) * (y2 - y1)
+                if area > largest_area:
+                    largest_area = area
+                    best_target_center = ((x1 + x2) // 2, (y1 + y2) // 2)
+
+            cv2.rectangle(debug_frame, (x1, y1), (x2, y2), box_color, 2)
+            label = f"{class_name} {box.conf[0]:.2f}"
+            cv2.putText(debug_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            
+        if self.target_is_acquired and best_target_center:
+             cv2.circle(debug_frame, best_target_center, 7, (0, 0, 255), -1)
+
+        return best_target_center, detection_this_frame
+        
+    def update_persistence(self, detection_this_frame):
+        """
+        Met à jour un compteur pour filtrer les détections parasites.
+        La cible est "acquise" après plusieurs détections successives et
+        "perdue" après plusieurs images sans détection.
+        """
+        if detection_this_frame:
+            self.detection_counter = min(self.detection_counter + 1, self.frames_to_acquire)
+        else:
+            self.detection_counter = max(self.detection_counter - 1, -self.frames_to_lose)
+            
+        if self.detection_counter >= self.frames_to_acquire:
+            if not self.target_is_acquired:
+                self.get_logger().info(f"Target ACQUIRED (seen for {self.detection_counter} frames)")
+            self.target_is_acquired = True
+        elif self.detection_counter <= -self.frames_to_lose:
+            if self.target_is_acquired:
+                self.get_logger().info(f"Target LOST (unseen for {abs(self.detection_counter)} frames)")
+            self.target_is_acquired = False
+            
     def destroy_node(self):
-        """Nettoyage à l'arrêt du nœud."""
         self.get_logger().info('Shutting down vision node...')
-        if self.cap is not None and self.cap.isOpened():
-            self.cap.release()
-            self.get_logger().info('Webcam capture released.')
+        if self.cap: self.cap.release()
         super().destroy_node()
-
 
 def main(args=None):
     rclpy.init(args=args)
     vision_node = None
     try:
         vision_node = VisionNode()
-        if rclpy.ok():
-            rclpy.spin(vision_node)
-    except KeyboardInterrupt:
-         if vision_node: vision_node.get_logger().info('Ctrl+C detected, shutting down.')
-         else: print("Ctrl+C detected during node initialization.")
-    except Exception as e:
-         logger = rclpy.logging.get_logger('vision_node_main')
-         logger.fatal(f"Unhandled exception: {e}")
-         import traceback
-         traceback.print_exc()
+        rclpy.spin(vision_node)
+    except KeyboardInterrupt: pass
     finally:
-        if vision_node is not None:
-            vision_node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
-        print("Vision node main process finished.")
-
+        if vision_node: vision_node.destroy_node()
+        if rclpy.ok(): rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

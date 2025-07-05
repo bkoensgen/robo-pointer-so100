@@ -1,5 +1,6 @@
 build/
 install/
+share/
 log/
 __pycache__/
 *.pyc
