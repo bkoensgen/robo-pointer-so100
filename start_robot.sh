@@ -52,8 +52,7 @@ tmux send-keys -t $SESSION_NAME:nodes.1 "$CMD_CONTROLLER" C-m
 
 # Panneau 2: real_robot_interface (AVEC LE LOG-LEVEL CORRIGÉ)
 CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args \
-    --log-level real_robot_interface:=debug \
-    -p yw_increment_scale:=0.00025 > ~/real_robot_interface_test1.log 2>&1"
+    --log-level real_robot_interface:=debug > ~/real_robot_interface_test1.log 2>&1"
 tmux send-keys -t $SESSION_NAME:nodes.2 "$CMD_ROBOT" C-m
 
 # Sélectionner une disposition pour bien voir les trois panneaux
