@@ -1,0 +1,26 @@
+# Git specific
+.git
+.gitignore
+
+# Docker specific
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# ROS 2 build artifacts
+build/
+install/
+log/
+
+# Local logs and environment files
+*.log
+.env
+
+# IDE / Editor specific
+.vscode/
+.idea/

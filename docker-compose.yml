@@ -1,0 +1,32 @@
+services:
+  robot_dev:
+    # Construit l'image à partir du Dockerfile dans le répertoire courant
+    build: .
+    # Nom de l'image qui sera créée
+    image: robo-pointer-app
+    # Commande à exécuter au démarrage. Ici, on lance le script Tmux.
+    # On doit le lancer avec bash car le script utilise des fonctionnalités bash.
+    command: bash -c "./start_robot.sh"
+    # Garde le conteneur en cours d'exécution et permet une session interactive
+    stdin_open: true
+    tty: true
+    # Nécessaire pour les applications ROS 2 qui communiquent beaucoup
+    ipc: host
+    
+    # --- SECTION POUR L'ACCÈS MATÉRIEL (LINUX UNIQUEMENT) ---
+    
+    # Accès aux périphériques
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyACM0"  # Port série du robot
+      - "/dev/video0:/dev/robot_camera" # Caméra (on utilise le même lien symbolique)
+    
+    # Permissions pour accéder aux périphériques
+    group_add:
+      - "dialout" # Groupe pour les ports série
+      - "video"   # Groupe pour les caméras
+
+    # --- SECTION POUR L'AFFICHAGE GRAPHIQUE (LINUX X11) ---
+    environment:
+      - "DISPLAY=${DISPLAY}" # Passe la variable d'affichage de l'hôte
+    volumes:
+      - "/tmp/.X11-unix:/tmp/.X11-unix:rw" # Partage le socket de l'affichage
