@@ -66,8 +66,6 @@ tmux send-keys -t $SESSION_NAME:robot_pipeline.1 "$CMD_CONTROLLER" C-m
 # Panneau 2 (à droite): real_robot_interface
 LOG_FILE="~/real_robot_interface_$(date +%F_%H-%M-%S).log"
 CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args \
-    --log-level real_robot_interface:=debug > ~/real_robot_interface_test1.log 2>&1"
-tmux send-keys -t $SESSION_NAME:nodes.2 "$CMD_ROBOT" C-m
     --log-level real_robot_interface:=info > $LOG_FILE 2>&1"
 tmux send-keys -t $SESSION_NAME:robot_pipeline.2 "$CMD_ROBOT" C-m
 
