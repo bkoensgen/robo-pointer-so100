@@ -12,7 +12,7 @@ CONDA_SITE_PACKAGES="/home/benja/miniconda3/envs/lerobot/lib/python3.10/site-pac
 
 # Configuration de la Vision
 CAMERA_DEVICE="/dev/video2"
-TARGET_CLASS="banana"
+TARGET_CLASS="apple"
 CONFIDENCE="0.5"
 FLIP_CODE="-1"
 
@@ -53,6 +53,7 @@ tmux split-window -v -t $SESSION_NAME:robot_pipeline.1
 CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
     -p camera_index:='$CAMERA_DEVICE' \
     -p target_class_name:='$TARGET_CLASS' \
+    -p persistence_frames_to_acquire:=1 \
     -p confidence_threshold:=$CONFIDENCE \
     -p flip_code:=$FLIP_CODE"
 tmux send-keys -t $SESSION_NAME:robot_pipeline.0 "$CMD_VISION" C-m
