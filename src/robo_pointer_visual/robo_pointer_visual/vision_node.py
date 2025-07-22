@@ -19,9 +19,9 @@ class VisionNode(Node):
         self.get_logger().info('Vision node starting.')
 
         # --- Paramètres ---
-        self.declare_parameter('camera_index', '/dev/robot_camera')
+        self.declare_parameter('camera_index', '/dev/camera_robot')
         self.declare_parameter('publish_rate_hz', 20.0)
-        self.declare_parameter('yolo_model', 'yolov8n.pt')
+        self.declare_parameter('yolo_model', 'yolov8l.pt')
         self.declare_parameter('target_class_name', 'bottle')
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('flip_code', -1)

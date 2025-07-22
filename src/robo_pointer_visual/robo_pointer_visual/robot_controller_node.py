@@ -26,8 +26,8 @@ class RobotControllerNode(Node):
         self.get_logger().info('Robot Controller node has started.')
 
         # --- Paramètres de Contrôle ---
-        self.declare_parameter('pixel_to_cartesian_scale_x', 0.0004)
-        self.declare_parameter('pixel_to_cartesian_scale_y', 0.0004)
+        self.declare_parameter('pixel_to_cartesian_scale_x', 0.0001)
+        self.declare_parameter('pixel_to_cartesian_scale_y', 0.0001)
         self.declare_parameter('camera_tilt_angle_deg', 30.0)
         self.declare_parameter('camera_forward_offset_m', 0.05)
         self.declare_parameter('k_gravity_id2', 12.0)
@@ -156,6 +156,8 @@ class RobotControllerNode(Node):
             final_lift_deg = np.clip(compensated_lift_deg, self.lift_min_deg, self.lift_max_deg)
             final_elbow_deg = np.clip(compensated_elbow_deg, self.elbow_min_deg, self.elbow_max_deg)
             final_wrist_deg = np.clip(target_wrist_deg, self.wrist_min_deg, self.wrist_max_deg)
+            
+            self.get_logger().info(f"Angles Cibles (Deg): Pan={final_pan_deg:.1f}, Lift={final_lift_deg:.1f}")
             
             target_joint_state_msg = JointState()
             target_joint_state_msg.header.stamp = self.get_clock().now().to_msg()

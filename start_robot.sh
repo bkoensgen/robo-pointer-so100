@@ -5,13 +5,13 @@
 # Nom de la session Tmux
 SESSION_NAME="robot_dev"
 
-# Chemins essentiels pour l'environnement lerobot
+# Chemins essentiels pour l'environnement
 LEROBOT_PATH="/home/benja/lerobot"
 CONDA_BASE_PATH="/home/benja/miniconda3"
-CONDA_SITE_PACKAGES="/home/benja/miniconda3/envs/lerobot/lib/python3.10/site-packages"
+CONDA_SITE_PACKAGES="${CONDA_BASE_PATH}/envs/lerobot/lib/python3.10/site-packages"
 
 # Configuration de la Vision
-CAMERA_DEVICE="/dev/video2"
+CAMERA_DEVICE="/dev/camera_robot"
 TARGET_CLASS="apple"
 CONFIDENCE="0.3"
 FLIP_CODE="-1"
@@ -21,8 +21,23 @@ FRAME_ACQUIRE="1"
 SCALE_X="0.0001"
 SCALE_Y="0.0001"
 
-# --- Fin Configuration Utilisateur ---
+# Par défaut, on utilise le modèle "large"
+YOLO_CHECKPOINT="yolov8l.pt"
 
+# On regarde le premier argument passé au script
+if [ "$1" == "nano" ]; then
+  YOLO_CHECKPOINT="yolov8n.pt"
+elif [ "$1" == "medium" ]; then
+  YOLO_CHECKPOINT="yolov8m.pt"
+elif [ "$1" == "large" ]; then
+  YOLO_CHECKPOINT="yolov8l.pt"
+elif [ -n "$1" ]; then
+
+  echo "Erreur : modèle '$1' non reconnu. Options valides : nano, medium, large."
+  exit 1
+fi
+
+echo "✅ Utilisation du modèle YOLO : $YOLO_CHECKPOINT"
 
 # --- Logique du Script ---
 
@@ -52,6 +67,7 @@ tmux split-window -v -t $SESSION_NAME:robot_pipeline.1
 
 # Panneau 0 (en haut à gauche): vision_node
 CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
+    -p yolo_model:='$YOLO_CHECKPOINT' \
     -p camera_index:='$CAMERA_DEVICE' \
     -p target_class_name:='$TARGET_CLASS' \
     -p persistence_frames_to_acquire:='$FRAME_ACQUIRE' \
