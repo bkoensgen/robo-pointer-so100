@@ -65,12 +65,28 @@ class VisionNode(Node):
 
     def reopen_capture(self):
         if self.cap and self.cap.isOpened(): self.cap.release()
-        self.cap = cv2.VideoCapture(self.camera_capture_source)
+        
+        self.cap = cv2.VideoCapture(self.camera_capture_source, cv2.CAP_V4L2)
+        
+        if self.cap and self.cap.isOpened():
+            self.get_logger().info(f'Webcam {self.camera_capture_source} opened. Forcing optimal parameters...')
+            
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+            
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
+
         if not (self.cap and self.cap.isOpened()):
             self.get_logger().warn(f"Failed to open webcam: {self.camera_capture_source}", throttle_duration_sec=5)
             self.cap = None
         else:
-            self.get_logger().info(f'Successfully opened webcam: {self.camera_capture_source}')
+            # On vérifie les paramètres qui ont réellement été appliqués
+            width = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            height = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            self.get_logger().info(f'Successfully opened webcam with parameters: {int(width)}x{int(height)} @ {fps:.2f} FPS')
 
     def timer_callback(self):
         """Callback principal: récupère une image, la traite et publie les résultats."""
