@@ -11,7 +11,7 @@ CONDA_BASE_PATH="/home/benja/miniconda3"
 CONDA_SITE_PACKAGES="${CONDA_BASE_PATH}/envs/lerobot/lib/python3.10/site-packages"
 
 # Configuration de la Vision
-CAMERA_DEVICE="/dev/camera_robot"
+CAMERA_DEVICE="/dev/video0"
 TARGET_CLASS="apple"
 CONFIDENCE="0.3"
 FLIP_CODE="-1"
