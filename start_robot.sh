@@ -24,7 +24,7 @@ SCALE_Y="0.0001"
 # Configuration Caméra
 FRAME_WIDTH="640"
 FRAME_HEIGHT="480"
-FRAME_RATE="30"
+FRAME_RATE="30.0"
 VIDEO_FOURCC="MJPG"
 
 # Par défaut, on utilise le modèle "large"
@@ -78,13 +78,13 @@ CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
     -p target_class_name:='$TARGET_CLASS' \
     -p persistence_frames_to_acquire:='$FRAME_ACQUIRE' \
     -p confidence_threshold:=$CONFIDENCE \
-    -p flip_code:=$FLIP_CODE" \
+    -p flip_code:=$FLIP_CODE \
     -p frame_width:=$FRAME_WIDTH \
     -p frame_height:=$FRAME_HEIGHT \
     -p frame_rate:=$FRAME_RATE \
     -p video_fourcc:=$VIDEO_FOURCC \
-    -p publish_rate_hz:=15 \
-    -p camera_backend:=v4l2 \
+    -p publish_rate_hz:=15.0 \
+    -p camera_backend:=v4l2" \
 
 tmux send-keys -t $SESSION_NAME:robot_pipeline.0 "$CMD_VISION" C-m
 
