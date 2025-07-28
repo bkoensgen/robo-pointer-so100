@@ -1,3 +1,4 @@
+import torch
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
@@ -55,6 +56,7 @@ class VisionNode(Node):
         try:
             self.model = YOLO(yolo_model_name)
             self.model.to('cuda')
+            self.model.half()
             self.class_names = self.model.names
         except Exception as e:
             self.get_logger().fatal(f'Failed to load YOLO model: {e}.'); rclpy.shutdown(); return
@@ -159,7 +161,8 @@ class VisionNode(Node):
                     continue
             
             self.consecutive_failures = 0
-            results = self.model(frame, verbose=False, conf=self.confidence_threshold, device='cuda')
+            results = self.model(frame, verbose=False, conf=self.confidence_threshold)[0]
+            torch.cuda.empty_cache()
             debug_frame = frame.copy()
             best_target_center = None
             largest_area = 0
