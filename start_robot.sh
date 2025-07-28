@@ -11,7 +11,7 @@ CONDA_BASE_PATH="/home/benja/miniconda3"
 CONDA_SITE_PACKAGES="${CONDA_BASE_PATH}/envs/lerobot/lib/python3.10/site-packages"
 
 # Configuration de la Vision
-CAMERA_DEVICE="/dev/video0"
+CAMERA_DEVICE="/dev/camera_robot"
 TARGET_CLASS="apple"
 CONFIDENCE="0.3"
 FLIP_CODE="-1"
@@ -21,8 +21,14 @@ FRAME_ACQUIRE="1"
 SCALE_X="0.0001"
 SCALE_Y="0.0001"
 
+# Configuration Caméra
+FRAME_WIDTH="640"
+FRAME_HEIGHT="480"
+FRAME_RATE="30"
+VIDEO_FOURCC="MJPG"
+
 # Par défaut, on utilise le modèle "large"
-YOLO_CHECKPOINT="yolov8l.pt"
+YOLO_CHECKPOINT="yolov8m.pt"
 
 # On regarde le premier argument passé au script
 if [ "$1" == "nano" ]; then
@@ -72,7 +78,14 @@ CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
     -p target_class_name:='$TARGET_CLASS' \
     -p persistence_frames_to_acquire:='$FRAME_ACQUIRE' \
     -p confidence_threshold:=$CONFIDENCE \
-    -p flip_code:=$FLIP_CODE"
+    -p flip_code:=$FLIP_CODE" \
+    -p frame_width:=$FRAME_WIDTH \
+    -p frame_height:=$FRAME_HEIGHT \
+    -p frame_rate:=$FRAME_RATE \
+    -p video_fourcc:=$VIDEO_FOURCC \
+    -p publish_rate_hz:=15 \
+    -p camera_backend:=v4l2 \
+
 tmux send-keys -t $SESSION_NAME:robot_pipeline.0 "$CMD_VISION" C-m
 
 # Panneau 1 (en bas à gauche): robot_controller_node

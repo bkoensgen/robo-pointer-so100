@@ -65,6 +65,8 @@ class VisionNode(Node):
         self.cap = None
         self.latest_frame = None
         self.latest_debug_frame = None
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 5
         self.last_known_target_point = Point(x=-1.0, y=-1.0, z=0.0)
         self.data_lock = threading.Lock()
         self.is_running = True
@@ -137,10 +139,26 @@ class VisionNode(Node):
         detection_counter = 0
         while self.is_running:
             ret, frame = self.cap.read()
+            
             if not ret or frame is None:
-                self.get_logger().warn("Worker: Failed to grab frame.", throttle_duration_sec=5)
-                time.sleep(0.5)
-                continue
+                self.consecutive_failures += 1
+                if self.consecutive_failures >= self.max_consecutive_failures:
+                    self.get_logger().error("Too many consecutive frame failures. Reinitializing camera...")
+                    self.cap.release()
+                    time.sleep(0.5)
+                    # Réessayer avec la configuration précédente
+                    if not self._configure_camera():
+                        self.get_logger().fatal("Camera reinitialization failed. Shutting down.")
+                        rclpy.shutdown()
+                        return
+                    self.consecutive_failures = 0
+                    continue
+                else:
+                    self.get_logger().warn(f"Failed to grab frame ({self.consecutive_failures}/{self.max_consecutive_failures}).", throttle_duration_sec=5)
+                    time.sleep(0.2)
+                    continue
+            
+            self.consecutive_failures = 0
             results = self.model(frame, verbose=False, conf=self.confidence_threshold, device='cuda')
             debug_frame = frame.copy()
             best_target_center = None
