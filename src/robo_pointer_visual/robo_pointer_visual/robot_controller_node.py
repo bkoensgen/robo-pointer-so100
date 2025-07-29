@@ -1,9 +1,11 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import SingleThreadedExecutor
 from geometry_msgs.msg import Point
 from sensor_msgs.msg import JointState
 import numpy as np
 import math
+import time
 import traceback
 
 from .kinematics import (
@@ -88,6 +90,9 @@ class RobotControllerNode(Node):
         de départ. S'annule après le premier envoi réussi.
         """
         if self.target_angles_publisher.get_subscription_count() > 0:
+            # Attente supplémentaire pour la caméra
+            self.get_logger().info("Waiting 2 seconds for camera to stabilize before moving...")
+            time.sleep(2.0)
             self.get_logger().info(f"Subscriber ready. Sending initial pose: { {k: round(v, 1) for k, v in self.initial_pose_deg.items()} }")
             
             target_msg = JointState()
@@ -126,7 +131,7 @@ class RobotControllerNode(Node):
             target_pan_deg = current_pan_deg - (error_x * self.scale_x)
 
             # L'axe Y de l'image est inversé par rapport à l'axe Y cartésien du robot
-            delta_yw = -error_y * self.scale_y
+            delta_yw = error_y * self.scale_y
             perceived_target_yw = current_yw + delta_yw
             perceived_target_xw = current_xw
 
@@ -176,11 +181,14 @@ class RobotControllerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = None
+    executor = SingleThreadedExecutor()
     try:
         node = RobotControllerNode()
-        rclpy.spin(node)
+        executor.add_node(node)
+        executor.spin()
     except KeyboardInterrupt: pass
     finally:
+        if executor: executor.shutdown()
         if node: node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
 

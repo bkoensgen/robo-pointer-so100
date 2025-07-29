@@ -9,6 +9,7 @@ from geometry_msgs.msg import Point
 from ultralytics import YOLO
 import threading
 import time
+import queue
 
 class VisionNode(Node):
     """
@@ -63,10 +64,12 @@ class VisionNode(Node):
         self.bridge = CvBridge()
         try: self.camera_capture_source = int(camera_index_param)
         except ValueError: self.camera_capture_source = camera_index_param
+        
         # --- Logique Asynchrone ---
         self.cap = None
         self.latest_frame = None
         self.latest_debug_frame = None
+        self.frame_queue = queue.Queue(maxsize=1)
         self.consecutive_failures = 0
         self.max_consecutive_failures = 5
         self.last_known_target_point = Point(x=-1.0, y=-1.0, z=0.0)
@@ -74,7 +77,10 @@ class VisionNode(Node):
         self.is_running = True
         self.processing_thread = threading.Thread(target=self.processing_worker)
         self.processing_thread.start()
-        
+        # Thread dédié à la capture
+        self.capture_thread = threading.Thread(target=self.capture_worker)
+        self.capture_thread.start()
+
         # --- Publishers ---
         self.image_publisher = self.create_publisher(Image, '/image_raw', 10)
         self.debug_image_publisher = self.create_publisher(Image, '/image_debug', 10)
@@ -93,7 +99,8 @@ class VisionNode(Node):
         
         self.get_logger().info(f"Attempting to open camera with backend: {self.camera_backend}")
         self.cap = cv2.VideoCapture(self.camera_capture_source, backend_flag)
-        
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         if not self.cap.isOpened():
             self.get_logger().warn(f"Failed to open camera with {self.camera_backend} backend, trying default")
             self.cap = cv2.VideoCapture(self.camera_capture_source)
@@ -127,47 +134,37 @@ class VisionNode(Node):
         time.sleep(1.0)
         return True
 
+    def capture_worker(self):
+        """Capture en continu et alimente la queue sans jamais bloquer."""
+        if not self._configure_camera():
+            rclpy.shutdown(); return
+        while self.is_running:
+            ret, frame = self.cap.read()
+            if not ret: continue
+            if self.frame_queue.full():
+                try: self.frame_queue.get_nowait()   # drop l’ancienne
+                except queue.Empty: pass
+            self.frame_queue.put(frame)
+
     def processing_worker(self):
         """Ce thread tourne en boucle pour traiter les images aussi vite que possible."""
         self.get_logger().info("Processing worker thread started.")
         self.get_logger().info(f"Worker thread is opening camera at: {self.camera_capture_source}")
         
-        # Configurer la caméra
-        if not self._configure_camera():
-            rclpy.shutdown()
-            return
-        
         target_is_acquired = False
         detection_counter = 0
         while self.is_running:
-            ret, frame = self.cap.read()
+            try:
+                frame = self.frame_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
             
-            if not ret or frame is None:
-                self.consecutive_failures += 1
-                if self.consecutive_failures >= self.max_consecutive_failures:
-                    self.get_logger().error("Too many consecutive frame failures. Reinitializing camera...")
-                    self.cap.release()
-                    time.sleep(0.5)
-                    # Réessayer avec la configuration précédente
-                    if not self._configure_camera():
-                        self.get_logger().fatal("Camera reinitialization failed. Shutting down.")
-                        rclpy.shutdown()
-                        return
-                    self.consecutive_failures = 0
-                    continue
-                else:
-                    self.get_logger().warn(f"Failed to grab frame ({self.consecutive_failures}/{self.max_consecutive_failures}).", throttle_duration_sec=5)
-                    time.sleep(0.2)
-                    continue
-            
-            self.consecutive_failures = 0
             results = self.model(frame, verbose=False, conf=self.confidence_threshold)[0]
-            torch.cuda.empty_cache()
             debug_frame = frame.copy()
             best_target_center = None
             largest_area = 0
             detection_this_frame = False
-            for box in results[0].boxes:
+            for box in results.boxes:
                 class_id = int(box.cls[0])
                 if self.class_names[class_id] == self.target_class_name:
                     detection_this_frame = True
@@ -186,7 +183,7 @@ class VisionNode(Node):
                 target_is_acquired = False
             with self.data_lock:
                 self.latest_frame = frame
-                for box in results[0].boxes:
+                for box in results.boxes:
                     x1,y1,x2,y2 = map(int, box.xyxy[0])
                     cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 self.latest_debug_frame = debug_frame
@@ -218,6 +215,8 @@ class VisionNode(Node):
     def destroy_node(self):
         self.get_logger().info('Shutting down vision node...')
         self.is_running = False
+        if hasattr(self, 'capture_thread'):
+            self.capture_thread.join()
         if hasattr(self, 'processing_thread'):
             self.processing_thread.join()
         if self.cap and self.cap.isOpened():

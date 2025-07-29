@@ -4,6 +4,7 @@ import time
 import json
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import SingleThreadedExecutor
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import JointState
 import traceback
@@ -302,11 +303,14 @@ class RealRobotInterfaceNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = None
+    executor = SingleThreadedExecutor()
     try:
         node = RealRobotInterfaceNode()
-        rclpy.spin(node)
+        executor.add_node(node)
+        executor.spin()
     except KeyboardInterrupt: pass
     finally:
+        if executor: executor.shutdown()
         if node: node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
 
