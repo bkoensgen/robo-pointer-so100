@@ -14,7 +14,6 @@ import enum
 from pathlib import Path
 
 # Utilisation directe de FeetechMotorsBus
-from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus, FeetechMotorsBusConfig
 # Importation directe du SDK bas niveau
 try:
     import scservo_sdk as scs
@@ -158,12 +157,14 @@ class RealRobotInterfaceNode(Node):
         self.reader_motors_ok = False
 
         try:
+            # Paramètres
+            self.declare_parameter('leader_arm_port', LEADER_ARM_PORT)
+            self.declare_parameter('read_frequency_hz', 20.0)
+
             self._load_calibration_file()
             self._connect_motor_bus()
             self._initialize_group_sync_handlers()
             self._initialize_motors_torque()
-            
-            self.declare_parameter('read_frequency_hz', 20.0)
             read_frequency = self.get_parameter('read_frequency_hz').get_parameter_value().double_value
             
             self.joint_state_publisher = self.create_publisher(JointState, '/joint_states', 10)
@@ -190,7 +191,16 @@ class RealRobotInterfaceNode(Node):
         self.get_logger().info(f"Calibration data loaded from: {calibration_file_path}")
 
     def _connect_motor_bus(self):
-        leader_config = FeetechMotorsBusConfig(port=LEADER_ARM_PORT, motors=LEADER_ARM_MOTORS)
+        # Import retardé pour éviter un échec d'import au chargement des tests
+        try:
+            from lerobot.common.robot_devices.motors.feetech import (
+                FeetechMotorsBus, FeetechMotorsBusConfig,
+            )
+        except Exception as e:
+            raise ImportError("lerobot feetech drivers not available. Ensure the 'lerobot' env is active.") from e
+
+        port_param = self.get_parameter('leader_arm_port').get_parameter_value().string_value or LEADER_ARM_PORT
+        leader_config = FeetechMotorsBusConfig(port=port_param, motors=LEADER_ARM_MOTORS)
         self.leader_bus_instance = FeetechMotorsBus(leader_config)
         self.leader_bus_instance.connect()
         self.port_handler = self.leader_bus_instance.port_handler
