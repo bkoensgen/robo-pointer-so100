@@ -25,6 +25,7 @@ class VisionNode(Node):
         self.declare_parameter('camera_index', '/dev/video0')
         self.declare_parameter('publish_rate_hz', 20.0)
         self.declare_parameter('yolo_model', 'yolov8n.pt')
+        self.declare_parameter('device', 'auto')  # 'auto' | 'cuda' | 'cpu'
         self.declare_parameter('target_class_name', 'bottle')
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('flip_code', -1)
@@ -39,6 +40,7 @@ class VisionNode(Node):
         camera_index_param = self.get_parameter('camera_index').get_parameter_value().string_value
         self.publish_rate = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
         yolo_model_name = self.get_parameter('yolo_model').get_parameter_value().string_value
+        device_param = self.get_parameter('device').get_parameter_value().string_value
         self.target_class_name = self.get_parameter('target_class_name').get_parameter_value().string_value
         self.confidence_threshold = self.get_parameter('confidence_threshold').get_parameter_value().double_value
         self.flip_code = self.get_parameter('flip_code').get_parameter_value().integer_value
@@ -53,14 +55,34 @@ class VisionNode(Node):
         self.frame_rate = self.get_parameter('frame_rate').get_parameter_value().double_value
         
         self.get_logger().info(f"Targeting Class: '{self.target_class_name}' with confidence > {self.confidence_threshold}")
-        # Initialisation du modèle YOLO
+        # Initialisation du modèle YOLO avec sélection du device
         try:
+            chosen_device = None
+            if device_param.lower() == 'auto':
+                chosen_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            elif device_param.lower() in ('cuda', 'cpu'):
+                # Respecter le choix explicite mais vérifier CUDA
+                if device_param.lower() == 'cuda' and not torch.cuda.is_available():
+                    self.get_logger().warn('CUDA not available, falling back to CPU')
+                    chosen_device = 'cpu'
+                else:
+                    chosen_device = device_param.lower()
+            else:
+                chosen_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                self.get_logger().warn(f"Unknown device '{device_param}', using '{chosen_device}'")
+
+            self.get_logger().info(f"Loading YOLO model '{yolo_model_name}' on device: {chosen_device}")
             self.model = YOLO(yolo_model_name)
-            self.model.to('cuda')
-            self.model.half()
+            self.model.to(chosen_device)
+            if chosen_device == 'cuda':
+                try:
+                    self.model.half()
+                except Exception:
+                    # Certaines combinaisons peuvent refuser half-precision: rester en FP32
+                    self.get_logger().warn('Half precision not enabled; running in FP32 on CUDA')
             self.class_names = self.model.names
         except Exception as e:
-            self.get_logger().fatal(f'Failed to load YOLO model: {e}.'); rclpy.shutdown(); return
+            self.get_logger().fatal(f'Failed to load/configure YOLO model: {e}.'); rclpy.shutdown(); return
         self.bridge = CvBridge()
         try: self.camera_capture_source = int(camera_index_param)
         except ValueError: self.camera_capture_source = camera_index_param
