@@ -36,6 +36,10 @@ class VisionNode(Node):
         self.declare_parameter('frame_width', 640)
         self.declare_parameter('frame_height', 480)
         self.declare_parameter('frame_rate', 30.0)
+        # Topics (paramétrables; valeurs par défaut relatives pour faciliter le namespacing)
+        self.declare_parameter('image_topic', 'image_raw')
+        self.declare_parameter('debug_image_topic', 'image_debug')
+        self.declare_parameter('target_topic', 'detected_target_point')
         
         camera_index_param = self.get_parameter('camera_index').get_parameter_value().string_value
         self.publish_rate = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
@@ -53,6 +57,10 @@ class VisionNode(Node):
         self.frame_width = self.get_parameter('frame_width').get_parameter_value().integer_value
         self.frame_height = self.get_parameter('frame_height').get_parameter_value().integer_value
         self.frame_rate = self.get_parameter('frame_rate').get_parameter_value().double_value
+        # Topics
+        self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
+        self.debug_image_topic = self.get_parameter('debug_image_topic').get_parameter_value().string_value
+        self.target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
         
         self.get_logger().info(f"Targeting Class: '{self.target_class_name}' with confidence > {self.confidence_threshold}")
         # Initialisation du modèle YOLO avec sélection du device
@@ -104,9 +112,9 @@ class VisionNode(Node):
         self.capture_thread.start()
 
         # --- Publishers ---
-        self.image_publisher = self.create_publisher(Image, '/image_raw', 10)
-        self.debug_image_publisher = self.create_publisher(Image, '/image_debug', 10)
-        self.target_publisher = self.create_publisher(Point, '/detected_target_point', 10)
+        self.image_publisher = self.create_publisher(Image, self.image_topic, 10)
+        self.debug_image_publisher = self.create_publisher(Image, self.debug_image_topic, 10)
+        self.target_publisher = self.create_publisher(Point, self.target_topic, 10)
         self.timer = self.create_timer(1.0 / self.publish_rate, self.publish_callback)
         self.get_logger().info('YOLOv8 vision node running...')
     
