@@ -5,6 +5,9 @@
 # Nom de la session Tmux
 SESSION_NAME="robot_dev"
 
+# Répertoire racine du repo (absolu)
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
 # Chemins essentiels pour l'environnement
 LEROBOT_PATH="/home/benja/lerobot"
 CONDA_BASE_PATH="/home/benja/miniconda3"
@@ -16,6 +19,7 @@ TARGET_CLASS="apple"
 CONFIDENCE="0.3"
 FLIP_CODE="-1"
 FRAME_ACQUIRE="1"
+DEVICE="auto"  # auto|cuda|cpu
 
 # Configuration du Contrôleur
 SCALE_X="0.0001"
@@ -27,7 +31,7 @@ FRAME_HEIGHT="480"
 FRAME_RATE="30.0"
 VIDEO_FOURCC="MJPG"
 
-# Par défaut, on utilise le modèle "large"
+# Par défaut, on utilise le modèle "medium" (poids au racine du repo)
 YOLO_CHECKPOINT="yolov8m.pt"
 
 # On regarde le premier argument passé au script
@@ -38,12 +42,18 @@ elif [ "$1" == "medium" ]; then
 elif [ "$1" == "large" ]; then
   YOLO_CHECKPOINT="yolov8l.pt"
 elif [ -n "$1" ]; then
-
   echo "Erreur : modèle '$1' non reconnu. Options valides : nano, medium, large."
   exit 1
 fi
 
-echo "✅ Utilisation du modèle YOLO : $YOLO_CHECKPOINT"
+# Chemin absolu des poids (évite un téléchargement réseau involontaire)
+YOLO_WEIGHTS_PATH="${REPO_ROOT}/${YOLO_CHECKPOINT}"
+if [ ! -f "$YOLO_WEIGHTS_PATH" ]; then
+  echo "⚠️  Poids YOLO introuvables: $YOLO_WEIGHTS_PATH"
+  echo "    Vérifie que les fichiers .pt sont au racine du repo."
+fi
+
+echo "✅ Utilisation du modèle YOLO : $YOLO_WEIGHTS_PATH (device=$DEVICE)"
 
 # --- Logique du Script ---
 
@@ -73,7 +83,7 @@ tmux split-window -v -t $SESSION_NAME:robot_pipeline.1
 
 # Panneau 0 (en haut à gauche): vision_node
 CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
-    -p yolo_model:='$YOLO_CHECKPOINT' \
+    -p yolo_model:='$YOLO_WEIGHTS_PATH' \
     -p camera_index:='$CAMERA_DEVICE' \
     -p target_class_name:='$TARGET_CLASS' \
     -p persistence_frames_to_acquire:='$FRAME_ACQUIRE' \
@@ -84,7 +94,8 @@ CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
     -p frame_rate:=$FRAME_RATE \
     -p video_fourcc:=$VIDEO_FOURCC \
     -p publish_rate_hz:=15.0 \
-    -p camera_backend:=v4l2" \
+    -p camera_backend:=v4l2 \
+    -p device:='$DEVICE'" \
 
 tmux send-keys -t $SESSION_NAME:robot_pipeline.0 "$CMD_VISION" C-m
 
@@ -96,7 +107,9 @@ tmux send-keys -t $SESSION_NAME:robot_pipeline.1 "$CMD_CONTROLLER" C-m
 
 # Panneau 2 (à droite): real_robot_interface
 LOG_FILE="~/real_robot_interface_$(date +%F_%H-%M-%S).log"
+LEADER_ARM_PORT="/dev/ttyACM0"
 CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args \
+    -p leader_arm_port:='$LEADER_ARM_PORT' \
     --log-level real_robot_interface:=info > $LOG_FILE 2>&1"
 tmux send-keys -t $SESSION_NAME:robot_pipeline.2 "$CMD_ROBOT" C-m
 
