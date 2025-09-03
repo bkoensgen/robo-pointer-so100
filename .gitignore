@@ -1,6 +1,47 @@
+# ROS 2 / colcon
 build/
 install/
 log/
+compile_commands.json
+
+# Anki decks (local learning artifacts)
+anki/
+
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+dist/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+
+# Testing and type checking
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.cache/
+
+# Vendored upstream (optional)
+src/vision_opencv/
+
+# Editors/OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

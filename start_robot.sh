@@ -1,63 +1,120 @@
 #!/bin/bash
 
+# --- Configuration Utilisateur ---
+
 # Nom de la session Tmux
 SESSION_NAME="robot_dev"
 
-# --- Configuration Utilisateur ---
-# Chemin vers le dossier LeRobot (À VÉRIFIER/ADAPTER SI NÉCESSAIRE)
-LEROBOT_PATH="/home/benja/lerobot"
-# Chemin vers le site-packages de l'environnement Conda (À VÉRIFIER/ADAPTER SI NÉCESSAIRE)
-CONDA_SITE_PACKAGES="/home/benja/miniconda3/envs/lerobot/lib/python3.10/site-packages"
-# --- Fin Configuration Utilisateur ---
+# Répertoire racine du repo (absolu)
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# Vérifier si Tmux est installé
+# Chemins essentiels pour l'environnement
+LEROBOT_PATH="/home/benja/lerobot"
+CONDA_BASE_PATH="/home/benja/miniconda3"
+CONDA_SITE_PACKAGES="${CONDA_BASE_PATH}/envs/lerobot/lib/python3.10/site-packages"
+
+# Configuration de la Vision
+CAMERA_DEVICE="/dev/camera_robot"
+TARGET_CLASS="apple"
+CONFIDENCE="0.3"
+FLIP_CODE="-1"
+FRAME_ACQUIRE="1"
+DEVICE="auto"  # auto|cuda|cpu
+
+# Configuration du Contrôleur
+SCALE_X="0.0001"
+SCALE_Y="0.0001"
+
+# Configuration Caméra
+FRAME_WIDTH="640"
+FRAME_HEIGHT="480"
+FRAME_RATE="30.0"
+VIDEO_FOURCC="MJPG"
+
+# Par défaut, on utilise le modèle "medium" (poids au racine du repo)
+YOLO_CHECKPOINT="yolov8m.pt"
+
+# On regarde le premier argument passé au script
+if [ "$1" == "nano" ]; then
+  YOLO_CHECKPOINT="yolov8n.pt"
+elif [ "$1" == "medium" ]; then
+  YOLO_CHECKPOINT="yolov8m.pt"
+elif [ "$1" == "large" ]; then
+  YOLO_CHECKPOINT="yolov8l.pt"
+elif [ -n "$1" ]; then
+  echo "Erreur : modèle '$1' non reconnu. Options valides : nano, medium, large."
+  exit 1
+fi
+
+# Chemin absolu des poids (évite un téléchargement réseau involontaire)
+YOLO_WEIGHTS_PATH="${REPO_ROOT}/${YOLO_CHECKPOINT}"
+if [ ! -f "$YOLO_WEIGHTS_PATH" ]; then
+  echo "⚠️  Poids YOLO introuvables: $YOLO_WEIGHTS_PATH"
+  echo "    Vérifie que les fichiers .pt sont au racine du repo."
+fi
+
+echo "✅ Utilisation du modèle YOLO : $YOLO_WEIGHTS_PATH (device=$DEVICE)"
+
+# --- Logique du Script ---
+
 if ! command -v tmux &> /dev/null
 then
-    echo "Erreur : tmux n'est pas installé. Veuillez l'installer avec 'sudo apt install tmux'."
+    echo "Erreur : tmux n'est pas installé."
     exit 1
 fi
 
-# Tuer toute session tmux existante avec le même nom pour éviter les conflits
+echo "Nettoyage d'une session tmux '$SESSION_NAME' existante..."
 tmux kill-session -t $SESSION_NAME 2>/dev/null || true
 
-# Commande de setup de base (Source ROS, activate Conda, export PYTHONPATH)
-SETUP_CMDS="echo '--- Configuration Environnement ---' && \
-source /opt/ros/humble/setup.bash && \
-echo 'ROS Humble OK' && \
+# Commande de setup de base, partagée par tous les panneaux
+SETUP_CMDS="source /opt/ros/humble/setup.bash && \
 source ~/ros2_ws/install/setup.bash && \
-echo 'Workspace ROS OK (avec cv_bridge local)' && \
+source ${CONDA_BASE_PATH}/etc/profile.d/conda.sh && \
 conda activate lerobot && \
-echo 'Conda lerobot OK' && \
 export PYTHONPATH=\"\${PYTHONPATH}:${LEROBOT_PATH}:${CONDA_SITE_PACKAGES}\" && \
-echo 'PYTHONPATH OK' && \
-echo '--- Lancement Nœud ---'"
+echo '--- Environnement ROS & Lerobot OK, lancement du nœud ---'"
 
-# Créer une nouvelle session tmux détachée avec une fenêtre nommée "nodes"
-tmux new-session -d -s $SESSION_NAME -n nodes
-
-# --- Configurer les Panneaux ---
-# Diviser la fenêtre verticalement (crée panneau 1 à droite)
-tmux split-window -h -t $SESSION_NAME:nodes.0
-# Diviser le nouveau panneau verticalement (crée panneau 2 à droite du panneau 1)
-tmux split-window -h -t $SESSION_NAME:nodes.1
+echo "Création de la nouvelle session tmux '$SESSION_NAME'..."
+tmux new-session -d -s $SESSION_NAME -n "robot_pipeline" -x "$(tput cols)" -y "$(tput lines)"
+tmux split-window -h -t $SESSION_NAME:robot_pipeline.0
+tmux split-window -v -t $SESSION_NAME:robot_pipeline.1
 
 # --- Envoyer les commandes à chaque panneau ---
 
-# Panneau 0: vision_node (Utilise /dev/video2)
-tmux send-keys -t $SESSION_NAME:nodes.0 "$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args -p camera_index:='/dev/video2' --log-level real_robot_interface:=debug" C-m
+# Panneau 0 (en haut à gauche): vision_node
+CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
+    -p yolo_model:='$YOLO_WEIGHTS_PATH' \
+    -p camera_index:='$CAMERA_DEVICE' \
+    -p target_class_name:='$TARGET_CLASS' \
+    -p persistence_frames_to_acquire:='$FRAME_ACQUIRE' \
+    -p confidence_threshold:=$CONFIDENCE \
+    -p flip_code:=$FLIP_CODE \
+    -p frame_width:=$FRAME_WIDTH \
+    -p frame_height:=$FRAME_HEIGHT \
+    -p frame_rate:=$FRAME_RATE \
+    -p video_fourcc:=$VIDEO_FOURCC \
+    -p publish_rate_hz:=15.0 \
+    -p camera_backend:=v4l2 \
+    -p device:='$DEVICE'" \
 
-# Panneau 1: robot_controller_node (CORRIGÉ)
-tmux send-keys -t $SESSION_NAME:nodes.1 "$SETUP_CMDS && ros2 run robo_pointer_visual robot_controller_node" C-m
+tmux send-keys -t $SESSION_NAME:robot_pipeline.0 "$CMD_VISION" C-m
 
-# Panneau 2: real_robot_interface (CORRIGÉ - avec log DEBUG)
-tmux send-keys -t $SESSION_NAME:nodes.2 "$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args -p yw_increment_scale:=0.00025 > ~/real_robot_interface_test1.log 2>&1" C-m
+# Panneau 1 (en bas à gauche): robot_controller_node
+CMD_CONTROLLER="$SETUP_CMDS && ros2 run robo_pointer_visual robot_controller_node --ros-args \
+    -p pixel_to_cartesian_scale_x:=$SCALE_X \
+    -p pixel_to_cartesian_scale_y:=$SCALE_Y"
+tmux send-keys -t $SESSION_NAME:robot_pipeline.1 "$CMD_CONTROLLER" C-m
 
-# Optionnel: Sélectionner une disposition (ex: tiled pour essayer d'égaliser la taille)
-tmux select-layout -t $SESSION_NAME:nodes tiled
+# Panneau 2 (à droite): real_robot_interface
+LOG_FILE="~/real_robot_interface_$(date +%F_%H-%M-%S).log"
+LEADER_ARM_PORT="/dev/ttyACM0"
+CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args \
+    -p leader_arm_port:='$LEADER_ARM_PORT' \
+    --log-level real_robot_interface:=info > $LOG_FILE 2>&1"
+tmux send-keys -t $SESSION_NAME:robot_pipeline.2 "$CMD_ROBOT" C-m
 
-# Donner un petit délai pour que les commandes commencent à s'exécuter
-sleep 2
+tmux select-layout -t $SESSION_NAME:robot_pipeline 'tiled'
 
-# Attacher à la session tmux pour voir les terminaux
-echo "Attaching to tmux session '$SESSION_NAME'. Pour détacher: Ctrl+b puis d. Pour réattacher: tmux attach -t $SESSION_NAME"
+echo "Attaching to tmux session '$SESSION_NAME'. Pour détacher: Ctrl+b puis d."
+sleep 1
 tmux attach-session -t $SESSION_NAME
