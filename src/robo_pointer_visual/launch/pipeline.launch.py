@@ -25,11 +25,14 @@ def generate_launch_description():
     camera_backend = LaunchConfiguration('camera_backend')
     target_class_name = LaunchConfiguration('target_class_name')
     device = LaunchConfiguration('device')
+    target_topic = LaunchConfiguration('target_topic')
     leader_arm_port = LaunchConfiguration('leader_arm_port')
 
     # Control args
     scale_x = LaunchConfiguration('pixel_to_cartesian_scale_x')
     scale_y = LaunchConfiguration('pixel_to_cartesian_scale_y')
+    joint_states_topic = LaunchConfiguration('joint_states_topic')
+    target_joint_angles_topic = LaunchConfiguration('target_joint_angles_topic')
 
     # Robot interface args
     read_freq = LaunchConfiguration('read_frequency_hz')
@@ -48,10 +51,13 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_backend', default_value='v4l2'),
         DeclareLaunchArgument('target_class_name', default_value='bottle'),
         DeclareLaunchArgument('device', default_value='auto'),
+        DeclareLaunchArgument('target_topic', default_value='detected_target_point'),
         DeclareLaunchArgument('leader_arm_port', default_value='/dev/ttyACM0'),
         DeclareLaunchArgument('pixel_to_cartesian_scale_x', default_value='0.0001'),
         DeclareLaunchArgument('pixel_to_cartesian_scale_y', default_value='0.0001'),
         DeclareLaunchArgument('read_frequency_hz', default_value='20.0'),
+        DeclareLaunchArgument('joint_states_topic', default_value='joint_states'),
+        DeclareLaunchArgument('target_joint_angles_topic', default_value='target_joint_angles'),
 
         # Nodes
         Node(
@@ -73,6 +79,7 @@ def generate_launch_description():
                     'camera_backend': camera_backend,
                     'target_class_name': target_class_name,
                     'device': device,
+                    'target_topic': target_topic,
                 }
             ]
         ),
@@ -85,6 +92,9 @@ def generate_launch_description():
                 {
                     'pixel_to_cartesian_scale_x': scale_x,
                     'pixel_to_cartesian_scale_y': scale_y,
+                    'target_topic': target_topic,
+                    'joint_states_topic': joint_states_topic,
+                    'target_joint_angles_topic': target_joint_angles_topic,
                 }
             ]
         ),

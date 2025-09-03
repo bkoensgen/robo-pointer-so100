@@ -27,6 +27,11 @@ vision_node:
 
 robot_controller_node:
   ros__parameters:
+    # Topics (relative names preferred for namespace-friendliness)
+    target_topic: "detected_target_point"
+    joint_states_topic: "joint_states"
+    target_joint_angles_topic: "target_joint_angles"
+
     # Image geometry for pixel->world translation
     image_width: 640
     image_height: 480
@@ -52,4 +57,3 @@ robot_controller_node:
     pan_angle_max_deg: 110.0
     wrist_angle_min_deg: -100.0
     wrist_angle_max_deg: 100.0
-

@@ -28,6 +28,11 @@ class RobotControllerNode(Node):
         self.get_logger().info('Robot Controller node has started.')
 
         # --- Paramètres de Contrôle ---
+        # Topics (relatifs par défaut pour supporter le namespacing)
+        self.declare_parameter('target_topic', 'detected_target_point')
+        self.declare_parameter('joint_states_topic', 'joint_states')
+        self.declare_parameter('target_joint_angles_topic', 'target_joint_angles')
+
         self.declare_parameter('pixel_to_cartesian_scale_x', 0.0001)
         self.declare_parameter('pixel_to_cartesian_scale_y', 0.0001)
         self.declare_parameter('camera_tilt_angle_deg', 30.0)
@@ -46,6 +51,11 @@ class RobotControllerNode(Node):
         self.declare_parameter('image_height', 480)
 
         # Récupération des paramètres
+        # Topics
+        self.target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
+        self.joint_states_topic = self.get_parameter('joint_states_topic').get_parameter_value().string_value
+        self.target_joint_angles_topic = self.get_parameter('target_joint_angles_topic').get_parameter_value().string_value
+
         self.scale_x = self.get_parameter('pixel_to_cartesian_scale_x').get_parameter_value().double_value
         self.scale_y = self.get_parameter('pixel_to_cartesian_scale_y').get_parameter_value().double_value
         self.camera_tilt_deg = self.get_parameter('camera_tilt_angle_deg').get_parameter_value().double_value
@@ -75,9 +85,9 @@ class RobotControllerNode(Node):
             self.pan_motor_name: 0.0, self.lift_motor_name: initial_lift,
             self.elbow_motor_name: initial_elbow, self.wrist_motor_name: initial_wrist
         }
-        self.target_subscription = self.create_subscription(Point, '/detected_target_point', self.target_callback, 10)
-        self.joint_state_subscription = self.create_subscription(JointState, '/joint_states', self.joint_state_callback, 10)
-        self.target_angles_publisher = self.create_publisher(JointState, '/target_joint_angles', 10)
+        self.target_subscription = self.create_subscription(Point, self.target_topic, self.target_callback, 10)
+        self.joint_state_subscription = self.create_subscription(JointState, self.joint_states_topic, self.joint_state_callback, 10)
+        self.target_angles_publisher = self.create_publisher(JointState, self.target_joint_angles_topic, 10)
         
         # Timer pour envoyer la position de départ de manière robuste
         self.initial_pose_timer = self.create_timer(0.5, self.send_initial_pose_when_ready)
