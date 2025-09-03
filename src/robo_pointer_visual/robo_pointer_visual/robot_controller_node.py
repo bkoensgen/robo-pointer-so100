@@ -1,6 +1,13 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.parameter import Parameter
+from rcl_interfaces.msg import (
+    ParameterDescriptor,
+    FloatingPointRange,
+    IntegerRange,
+    SetParametersResult,
+)
 from geometry_msgs.msg import Point
 from sensor_msgs.msg import JointState
 import numpy as np
@@ -28,27 +35,46 @@ class RobotControllerNode(Node):
         self.get_logger().info('Robot Controller node has started.')
 
         # --- Paramètres de Contrôle ---
-        # Topics (relatifs par défaut pour supporter le namespacing)
-        self.declare_parameter('target_topic', 'detected_target_point')
-        self.declare_parameter('joint_states_topic', 'joint_states')
-        self.declare_parameter('target_joint_angles_topic', 'target_joint_angles')
+        # Descripteurs numériques pour validation
+        gt0 = ParameterDescriptor(
+            description='Strictly positive scalar',
+            floating_point_range=[FloatingPointRange(from_value=1e-9, to_value=1e9, step=0.0)],
+        )
+        deg_any = ParameterDescriptor(
+            description='Angle in degrees (-360..360)',
+            floating_point_range=[FloatingPointRange(from_value=-360.0, to_value=360.0, step=0.0)],
+        )
+        offset_nonneg = ParameterDescriptor(
+            description='Non-negative offset (m)',
+            floating_point_range=[FloatingPointRange(from_value=0.0, to_value=10.0, step=0.0)],
+        )
+        img_dim = ParameterDescriptor(
+            description='Positive image dimension (px)',
+            integer_range=[IntegerRange(from_value=16, to_value=16384, step=1)],
+        )
 
-        self.declare_parameter('pixel_to_cartesian_scale_x', 0.0001)
-        self.declare_parameter('pixel_to_cartesian_scale_y', 0.0001)
-        self.declare_parameter('camera_tilt_angle_deg', 30.0)
-        self.declare_parameter('camera_forward_offset_m', 0.05)
-        self.declare_parameter('k_gravity_id2', 12.0)
-        self.declare_parameter('k_gravity_id3', 6.0)
-        self.declare_parameter('lift_angle_min_deg', 0.0)
-        self.declare_parameter('lift_angle_max_deg', 130.0)
-        self.declare_parameter('elbow_angle_min_deg', 0.0)
-        self.declare_parameter('elbow_angle_max_deg', 110.0)
-        self.declare_parameter('pan_angle_min_deg', -110.0)
-        self.declare_parameter('pan_angle_max_deg', 110.0)
-        self.declare_parameter('wrist_angle_min_deg', -100.0)
-        self.declare_parameter('wrist_angle_max_deg', 100.0)
-        self.declare_parameter('image_width', 640)
-        self.declare_parameter('image_height', 480)
+        # Topics (relatifs par défaut pour supporter le namespacing)
+        self.declare_parameter('target_topic', 'detected_target_point', ParameterDescriptor(description='Input target point topic'))
+        self.declare_parameter('joint_states_topic', 'joint_states', ParameterDescriptor(description='Input joint states topic'))
+        self.declare_parameter('target_joint_angles_topic', 'target_joint_angles', ParameterDescriptor(description='Output target joint angles topic'))
+
+        # Paramètres numériques avec bornes
+        self.declare_parameter('pixel_to_cartesian_scale_x', 0.0001, gt0)
+        self.declare_parameter('pixel_to_cartesian_scale_y', 0.0001, gt0)
+        self.declare_parameter('camera_tilt_angle_deg', 30.0, deg_any)
+        self.declare_parameter('camera_forward_offset_m', 0.05, offset_nonneg)
+        self.declare_parameter('k_gravity_id2', 12.0, gt0)
+        self.declare_parameter('k_gravity_id3', 6.0, gt0)
+        self.declare_parameter('lift_angle_min_deg', 0.0, deg_any)
+        self.declare_parameter('lift_angle_max_deg', 130.0, deg_any)
+        self.declare_parameter('elbow_angle_min_deg', 0.0, deg_any)
+        self.declare_parameter('elbow_angle_max_deg', 110.0, deg_any)
+        self.declare_parameter('pan_angle_min_deg', -110.0, deg_any)
+        self.declare_parameter('pan_angle_max_deg', 110.0, deg_any)
+        self.declare_parameter('wrist_angle_min_deg', -100.0, deg_any)
+        self.declare_parameter('wrist_angle_max_deg', 100.0, deg_any)
+        self.declare_parameter('image_width', 640, img_dim)
+        self.declare_parameter('image_height', 480, img_dim)
 
         # Récupération des paramètres
         # Topics
@@ -94,6 +120,9 @@ class RobotControllerNode(Node):
 
         self.get_logger().info('Ready. Waiting for subscriber to be ready...')
 
+        # Validation dynamique (cohérence min/max et bornes supplémentaires)
+        self.add_on_set_parameters_callback(self._on_set_parameters)
+
     def send_initial_pose_when_ready(self):
         """
         Vérifie si un abonné (le robot) est prêt avant d'envoyer la position
@@ -120,6 +149,51 @@ class RobotControllerNode(Node):
     def joint_state_callback(self, msg: JointState):
         """Met à jour l'état actuel des articulations du robot."""
         self.current_joint_states = msg
+
+    def _on_set_parameters(self, params: list[Parameter]) -> SetParametersResult:
+        """Valide les mises à jour de paramètres (bornes et cohérence)."""
+        def as_float(p: Parameter) -> float:
+            return float(p.value)
+        def as_int(p: Parameter) -> int:
+            return int(p.value)
+        for p in params:
+            n = p.name
+            if n in ('pixel_to_cartesian_scale_x', 'pixel_to_cartesian_scale_y', 'k_gravity_id2', 'k_gravity_id3'):
+                if p.type_ != Parameter.Type.DOUBLE or as_float(p) <= 0.0:
+                    return SetParametersResult(successful=False, reason=f'{n} must be > 0')
+            elif n == 'camera_forward_offset_m':
+                if p.type_ != Parameter.Type.DOUBLE or as_float(p) < 0.0:
+                    return SetParametersResult(successful=False, reason=f'{n} must be >= 0')
+            elif n in ('camera_tilt_angle_deg','lift_angle_min_deg','lift_angle_max_deg','elbow_angle_min_deg','elbow_angle_max_deg','pan_angle_min_deg','pan_angle_max_deg','wrist_angle_min_deg','wrist_angle_max_deg'):
+                if p.type_ != Parameter.Type.DOUBLE:
+                    return SetParametersResult(successful=False, reason=f'{n} must be a float degree value')
+                v = as_float(p)
+                if not (-360.0 <= v <= 360.0):
+                    return SetParametersResult(successful=False, reason=f'{n} must be within [-360, 360]')
+            elif n in ('image_width','image_height'):
+                if p.type_ != Parameter.Type.INTEGER or as_int(p) <= 0:
+                    return SetParametersResult(successful=False, reason=f'{n} must be a positive integer')
+
+        # Cohérence min <= max (utilise les valeurs courantes)
+        lift_min = float(self.get_parameter('lift_angle_min_deg').value)
+        lift_max = float(self.get_parameter('lift_angle_max_deg').value)
+        elbow_min = float(self.get_parameter('elbow_angle_min_deg').value)
+        elbow_max = float(self.get_parameter('elbow_angle_max_deg').value)
+        pan_min = float(self.get_parameter('pan_angle_min_deg').value)
+        pan_max = float(self.get_parameter('pan_angle_max_deg').value)
+        wrist_min = float(self.get_parameter('wrist_angle_min_deg').value)
+        wrist_max = float(self.get_parameter('wrist_angle_max_deg').value)
+
+        if lift_min > lift_max:
+            return SetParametersResult(successful=False, reason='lift_angle_min_deg must be <= lift_angle_max_deg')
+        if elbow_min > elbow_max:
+            return SetParametersResult(successful=False, reason='elbow_angle_min_deg must be <= elbow_angle_max_deg')
+        if pan_min > pan_max:
+            return SetParametersResult(successful=False, reason='pan_angle_min_deg must be <= pan_angle_max_deg')
+        if wrist_min > wrist_max:
+            return SetParametersResult(successful=False, reason='wrist_angle_min_deg must be <= wrist_angle_max_deg')
+
+        return SetParametersResult(successful=True)
 
     def target_callback(self, msg: Point):
         """Callback principal pour le traitement d'une nouvelle cible."""
