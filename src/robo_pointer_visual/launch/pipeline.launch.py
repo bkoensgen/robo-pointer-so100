@@ -1,10 +1,17 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    # Config YAML path
+    params_yaml = PathJoinSubstitution([
+        FindPackageShare('robo_pointer_visual'),
+        'config',
+        'params.yaml',
+    ])
     # Vision args
     yolo_model = LaunchConfiguration('yolo_model')
     camera_index = LaunchConfiguration('camera_index')
@@ -51,29 +58,35 @@ def generate_launch_description():
             package='robo_pointer_visual',
             executable='vision_node',
             name='vision_node',
-            parameters=[{
-                'yolo_model': yolo_model,
-                'camera_index': camera_index,
-                'confidence_threshold': confidence,
-                'flip_code': flip_code,
-                'frame_width': frame_width,
-                'frame_height': frame_height,
-                'frame_rate': frame_rate,
-                'publish_rate_hz': publish_rate,
-                'video_fourcc': video_fourcc,
-                'camera_backend': camera_backend,
-                'target_class_name': target_class_name,
-                'device': device,
-            }]
+            parameters=[
+                params_yaml,
+                {
+                    'yolo_model': yolo_model,
+                    'camera_index': camera_index,
+                    'confidence_threshold': confidence,
+                    'flip_code': flip_code,
+                    'frame_width': frame_width,
+                    'frame_height': frame_height,
+                    'frame_rate': frame_rate,
+                    'publish_rate_hz': publish_rate,
+                    'video_fourcc': video_fourcc,
+                    'camera_backend': camera_backend,
+                    'target_class_name': target_class_name,
+                    'device': device,
+                }
+            ]
         ),
         Node(
             package='robo_pointer_visual',
             executable='robot_controller_node',
             name='robot_controller_node',
-            parameters=[{
-                'pixel_to_cartesian_scale_x': scale_x,
-                'pixel_to_cartesian_scale_y': scale_y,
-            }]
+            parameters=[
+                params_yaml,
+                {
+                    'pixel_to_cartesian_scale_x': scale_x,
+                    'pixel_to_cartesian_scale_y': scale_y,
+                }
+            ]
         ),
         Node(
             package='robo_pointer_visual',

@@ -1,0 +1,55 @@
+vision_node:
+  ros__parameters:
+    # Device & Model
+    yolo_model: "yolov8n.pt"
+    device: "auto"   # auto|cuda|cpu
+
+    # Camera & IO
+    camera_index: "/dev/video0"
+    camera_backend: "v4l2"   # auto|v4l2|gstreamer
+    video_fourcc: "MJPG"
+    frame_width: 640
+    frame_height: 480
+    frame_rate: 30.0
+    flip_code: -1
+
+    # Topics
+    image_topic: "image_raw"
+    debug_image_topic: "image_debug"
+    target_topic: "detected_target_point"
+
+    # Detection
+    target_class_name: "bottle"
+    confidence_threshold: 0.5
+    persistence_frames_to_acquire: 3
+    persistence_frames_to_lose: 5
+    publish_rate_hz: 20.0
+
+robot_controller_node:
+  ros__parameters:
+    # Image geometry for pixel->world translation
+    image_width: 640
+    image_height: 480
+
+    # Pixel-to-world scaling (heuristics)
+    pixel_to_cartesian_scale_x: 0.0001
+    pixel_to_cartesian_scale_y: 0.0001
+
+    # Camera pose vs arm base
+    camera_tilt_angle_deg: 30.0
+    camera_forward_offset_m: 0.05
+
+    # Gravity compensation gains
+    k_gravity_id2: 12.0
+    k_gravity_id3: 6.0
+
+    # Joint limits (deg)
+    lift_angle_min_deg: 0.0
+    lift_angle_max_deg: 130.0
+    elbow_angle_min_deg: 0.0
+    elbow_angle_max_deg: 110.0
+    pan_angle_min_deg: -110.0
+    pan_angle_max_deg: 110.0
+    wrist_angle_min_deg: -100.0
+    wrist_angle_max_deg: 100.0
+
