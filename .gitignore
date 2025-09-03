@@ -2,7 +2,6 @@
 build/
 install/
 log/
-share/
 compile_commands.json
 
 # Anki decks (local learning artifacts)
@@ -32,6 +31,9 @@ env/
 htmlcov/
 .tox/
 .cache/
+
+# Vendored upstream (optional)
+src/vision_opencv/
 
 # Editors/OS
 .vscode/
