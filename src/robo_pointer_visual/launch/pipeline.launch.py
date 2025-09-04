@@ -105,6 +105,8 @@ def generate_launch_description():
             parameters=[{
                 'read_frequency_hz': read_freq,
                 'leader_arm_port': leader_arm_port,
+                'joint_states_topic': joint_states_topic,
+                'target_joint_angles_topic': target_joint_angles_topic,
             }]
         ),
     ])
