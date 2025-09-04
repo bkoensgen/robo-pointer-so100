@@ -162,7 +162,11 @@ class RobotControllerNode(Node):
         # Timer pour envoyer la position de départ de manière robuste
         self.initial_pose_timer = self.create_timer(0.5, self.send_initial_pose_when_ready)
 
-        self.get_logger().info('Ready. Waiting for subscriber to be ready...')
+        self.get_logger().info(
+            f"Ready. PID={'on' if self.use_pid else 'off'}; max_speeds(deg/s)="
+            f" pan={self.max_speed_pan}, lift={self.max_speed_lift},"
+            f" elbow={self.max_speed_elbow}, wrist={self.max_speed_wrist}"
+        )
 
         # Validation dynamique (cohérence min/max et bornes supplémentaires)
         self.add_on_set_parameters_callback(self._on_set_parameters)
@@ -372,7 +376,10 @@ class RobotControllerNode(Node):
             final_elbow_deg = current_elbow_deg + float(np.clip(elbow_phys - current_elbow_deg, -self.max_speed_elbow * dt, self.max_speed_elbow * dt))
             final_wrist_deg = current_wrist_deg + float(np.clip(wrist_phys - current_wrist_deg, -self.max_speed_wrist * dt, self.max_speed_wrist * dt))
             
-            self.get_logger().info(f"Angles Cibles (Deg): Pan={final_pan_deg:.1f}, Lift={final_lift_deg:.1f}")
+            self.get_logger().debug(
+                f"Target Angles (deg): pan={final_pan_deg:.1f}, lift={final_lift_deg:.1f},"
+                f" elbow={final_elbow_deg:.1f}, wrist={final_wrist_deg:.1f}"
+            )
             
             target_joint_state_msg = JointState()
             target_joint_state_msg.header.stamp = self.get_clock().now().to_msg()
