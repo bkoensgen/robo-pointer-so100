@@ -160,6 +160,9 @@ class RealRobotInterfaceNode(Node):
             # Paramètres
             self.declare_parameter('leader_arm_port', LEADER_ARM_PORT)
             self.declare_parameter('read_frequency_hz', 20.0)
+            # Topics (relatifs par défaut, pour supporter le namespacing)
+            self.declare_parameter('joint_states_topic', 'joint_states')
+            self.declare_parameter('target_joint_angles_topic', 'target_joint_angles')
 
             self._load_calibration_file()
             self._connect_motor_bus()
@@ -167,9 +170,12 @@ class RealRobotInterfaceNode(Node):
             self._initialize_motors_torque()
             read_frequency = self.get_parameter('read_frequency_hz').get_parameter_value().double_value
             
-            self.joint_state_publisher = self.create_publisher(JointState, '/joint_states', 10)
+            joint_states_topic = self.get_parameter('joint_states_topic').get_parameter_value().string_value
+            target_joint_angles_topic = self.get_parameter('target_joint_angles_topic').get_parameter_value().string_value
+
+            self.joint_state_publisher = self.create_publisher(JointState, joint_states_topic, 10)
             self.target_angles_subscription = self.create_subscription(
-                JointState, '/target_joint_angles', self.target_angles_callback, 10
+                JointState, target_joint_angles_topic, self.target_angles_callback, 10
             )
             self.read_publish_timer = self.create_timer(1.0 / read_frequency, self.read_and_publish_states)
             
