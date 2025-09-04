@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -38,6 +38,7 @@ def generate_launch_description():
     # Robot interface args
     read_freq = LaunchConfiguration('read_frequency_hz')
     enable_interface = LaunchConfiguration('enable_interface')
+    interface_type = LaunchConfiguration('interface_type')
     publish_static_tf = LaunchConfiguration('publish_static_tf')
     tf_parent = LaunchConfiguration('tf_parent_frame')
     tf_child = LaunchConfiguration('tf_child_frame')
@@ -70,6 +71,7 @@ def generate_launch_description():
         DeclareLaunchArgument('joint_states_topic', default_value='joint_states'),
         DeclareLaunchArgument('target_joint_angles_topic', default_value='target_joint_angles'),
         DeclareLaunchArgument('enable_interface', default_value='true'),
+        DeclareLaunchArgument('interface_type', default_value='real'),  # real|mock|none
         DeclareLaunchArgument('publish_static_tf', default_value='false'),
         DeclareLaunchArgument('tf_parent_frame', default_value='wrist_link'),
         DeclareLaunchArgument('tf_child_frame', default_value='camera_frame'),
@@ -123,10 +125,21 @@ def generate_launch_description():
             package='robo_pointer_visual',
             executable='real_robot_interface',
             name='real_robot_interface',
-            condition=IfCondition(enable_interface),
+            condition=IfCondition(PythonExpression(["'", interface_type, "' == 'real' and ", enable_interface])),
             parameters=[{
                 'read_frequency_hz': read_freq,
                 'leader_arm_port': leader_arm_port,
+                'joint_states_topic': joint_states_topic,
+                'target_joint_angles_topic': target_joint_angles_topic,
+            }]
+        ),
+        Node(
+            package='robo_pointer_visual',
+            executable='mock_robot_interface',
+            name='mock_robot_interface',
+            condition=IfCondition(PythonExpression(["'", interface_type, "' == 'mock'"])),
+            parameters=[{
+                'read_frequency_hz': read_freq,
                 'joint_states_topic': joint_states_topic,
                 'target_joint_angles_topic': target_joint_angles_topic,
             }]
