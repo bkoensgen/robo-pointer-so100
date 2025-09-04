@@ -23,6 +23,14 @@ ros2 launch robo_pointer_visual pipeline.launch.py \
   leader_arm_port:=/dev/ttyACM0
 ```
 
+Mode offline (sans interface matérielle):
+
+```bash
+ros2 launch robo_pointer_visual pipeline.launch.py \
+  yolo_model:=/home/benja/ros2_ws/yolov8n.pt camera_index:=/dev/video0 \
+  enable_interface:=false
+```
+
 3) Activer le PID (optionnel, à chaud)
 
 ```bash
