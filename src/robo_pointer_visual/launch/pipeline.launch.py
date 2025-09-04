@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -36,6 +37,7 @@ def generate_launch_description():
 
     # Robot interface args
     read_freq = LaunchConfiguration('read_frequency_hz')
+    enable_interface = LaunchConfiguration('enable_interface')
 
     return LaunchDescription([
         # Decls
@@ -58,6 +60,7 @@ def generate_launch_description():
         DeclareLaunchArgument('read_frequency_hz', default_value='20.0'),
         DeclareLaunchArgument('joint_states_topic', default_value='joint_states'),
         DeclareLaunchArgument('target_joint_angles_topic', default_value='target_joint_angles'),
+        DeclareLaunchArgument('enable_interface', default_value='true'),
 
         # Nodes
         Node(
@@ -102,6 +105,7 @@ def generate_launch_description():
             package='robo_pointer_visual',
             executable='real_robot_interface',
             name='real_robot_interface',
+            condition=IfCondition(enable_interface),
             parameters=[{
                 'read_frequency_hz': read_freq,
                 'leader_arm_port': leader_arm_port,
