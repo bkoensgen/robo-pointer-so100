@@ -86,3 +86,8 @@ robot_controller_node:
     #   lift: 45.0
     #   elbow: 45.0
     #   wrist: 90.0
+
+    # --- Safety / Stability (optional) ---
+    # dead_zone_px: 8            # ignore small pixel errors near image center
+    # no_detection_behavior: 'hold'  # 'hold' or 'home'
+    # no_detection_timeout_s: 3.0    # seconds without detection before applying 'home'

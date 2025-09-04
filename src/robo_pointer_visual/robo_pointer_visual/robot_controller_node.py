@@ -96,6 +96,11 @@ class RobotControllerNode(Node):
         self.declare_parameter('joint_speed_max_deg_s.elbow', 45.0)
         self.declare_parameter('joint_speed_max_deg_s.wrist', 90.0)
 
+        # Safety and smoothing
+        self.declare_parameter('dead_zone_px', 8)
+        self.declare_parameter('no_detection_behavior', 'hold')  # hold|home
+        self.declare_parameter('no_detection_timeout_s', 3.0)
+
         # Récupération des paramètres
         # Topics
         self.target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
@@ -136,12 +141,19 @@ class RobotControllerNode(Node):
         self.max_speed_elbow = float(self.get_parameter('joint_speed_max_deg_s.elbow').get_parameter_value().double_value)
         self.max_speed_wrist = float(self.get_parameter('joint_speed_max_deg_s.wrist').get_parameter_value().double_value)
 
+        self.dead_zone_px = int(self.get_parameter('dead_zone_px').get_parameter_value().integer_value)
+        self.no_detection_behavior = str(self.get_parameter('no_detection_behavior').get_parameter_value().string_value).lower()
+        self.no_detection_timeout_s = float(self.get_parameter('no_detection_timeout_s').get_parameter_value().double_value)
+
         # Internal PID state
         self._ex_prev = 0.0
         self._ey_prev = 0.0
         self._ix = 0.0
         self._iy = 0.0
         self._last_time_ns = self.get_clock().now().nanoseconds
+        self._last_home_tick_ns = self._last_time_ns
+        self._last_detection_time_ns = self._last_time_ns
+        self._homing_active = False
         
         self.current_joint_states = None
         self.pan_motor_name = "shoulder_pan"
@@ -161,6 +173,8 @@ class RobotControllerNode(Node):
         
         # Timer pour envoyer la position de départ de manière robuste
         self.initial_pose_timer = self.create_timer(0.5, self.send_initial_pose_when_ready)
+        # Timer de sécurité: homing si la détection est absente trop longtemps
+        self.homing_timer = self.create_timer(0.1, self.homing_tick)
 
         self.get_logger().info(
             f"Ready. PID={'on' if self.use_pid else 'off'}; max_speeds(deg/s)="
@@ -235,6 +249,15 @@ class RobotControllerNode(Node):
             ):
                 if p.type_ != Parameter.Type.DOUBLE or as_float(p) <= 0.0:
                     return SetParametersResult(successful=False, reason=f'{n} must be > 0 (deg/s)')
+            elif n == 'dead_zone_px':
+                if p.type_ != Parameter.Type.INTEGER or as_int(p) < 0:
+                    return SetParametersResult(successful=False, reason='dead_zone_px must be a non-negative integer')
+            elif n == 'no_detection_timeout_s':
+                if p.type_ != Parameter.Type.DOUBLE or as_float(p) <= 0.0:
+                    return SetParametersResult(successful=False, reason='no_detection_timeout_s must be > 0')
+            elif n == 'no_detection_behavior':
+                if p.type_ != Parameter.Type.STRING or str(p.value).lower() not in {'hold','home'}:
+                    return SetParametersResult(successful=False, reason="no_detection_behavior must be 'hold' or 'home'")
 
         # Cohérence min <= max (utilise les valeurs courantes)
         lift_min = float(self.get_parameter('lift_angle_min_deg').value)
@@ -287,12 +310,34 @@ class RobotControllerNode(Node):
             except Exception:
                 pass
 
+        # Apply updates to internal fields for dynamic tuning
+        for p in params:
+            n = p.name
+            try:
+                if n == 'dead_zone_px':
+                    self.dead_zone_px = int(p.value)
+                elif n == 'no_detection_timeout_s':
+                    self.no_detection_timeout_s = float(p.value)
+                elif n == 'no_detection_behavior':
+                    self.no_detection_behavior = str(p.value).lower()
+            except Exception:
+                pass
+
         return SetParametersResult(successful=True)
 
     def target_callback(self, msg: Point):
         """Callback principal pour le traitement d'une nouvelle cible."""
-        if not self.initial_pose_timer.is_canceled(): return
-        if msg.x == -1.0: return
+        if not self.initial_pose_timer.is_canceled():
+            return
+        # Handle detection presence
+        if msg.x == -1.0:
+            # no detection in this frame; leave last_detection_time untouched
+            return
+        else:
+            self._last_detection_time_ns = self.get_clock().now().nanoseconds
+            # Leaving homing mode if it was active
+            if self._homing_active:
+                self._homing_active = False
         if self.current_joint_states is None: return
 
         try:
@@ -303,9 +348,13 @@ class RobotControllerNode(Node):
 
             current_xw, current_yw = calculate_fk_wrist(current_lift_deg, current_elbow_deg)
 
-            # Pixel errors relative to image center
+            # Pixel errors relative to image center + dead-zone
             error_x = msg.x - (self.image_width / 2.0)
             error_y = msg.y - (self.image_height / 2.0)
+            if abs(error_x) < self.dead_zone_px:
+                error_x = 0.0
+            if abs(error_y) < self.dead_zone_px:
+                error_y = 0.0
 
             # Time delta for PID and slew-rate limiting
             now_ns = self.get_clock().now().nanoseconds
@@ -394,6 +443,55 @@ class RobotControllerNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in control loop: {e}")
             traceback.print_exc()
+
+    def homing_tick(self):
+        """Si aucune détection pendant no_detection_timeout_s et mode 'home',
+        ramener progressivement le bras à la pose initiale en respectant les vitesses max.
+        """
+        # Attendre l'envoi initial
+        if not self.initial_pose_timer.is_canceled():
+            return
+        if self.no_detection_behavior != 'home':
+            return
+        now_ns = self.get_clock().now().nanoseconds
+        since_det_s = (now_ns - self._last_detection_time_ns) * 1e-9
+        if since_det_s < self.no_detection_timeout_s:
+            return
+
+        # Activer homing
+        self._homing_active = True
+        dt = max((now_ns - self._last_home_tick_ns) * 1e-9, 1e-3)
+        self._last_home_tick_ns = now_ns
+
+        # Lire l'état courant; fallback sur initial si inconnu
+        joint_map = {}
+        if self.current_joint_states is not None:
+            joint_map = {name: math.degrees(pos) for name, pos in zip(self.current_joint_states.name, self.current_joint_states.position)}
+        current_pan_deg = joint_map.get(self.pan_motor_name, self.initial_pose_deg[self.pan_motor_name])
+        current_lift_deg = joint_map.get(self.lift_motor_name, self.initial_pose_deg[self.lift_motor_name])
+        current_elbow_deg = joint_map.get(self.elbow_motor_name, self.initial_pose_deg[self.elbow_motor_name])
+        current_wrist_deg = joint_map.get(self.wrist_motor_name, self.initial_pose_deg[self.wrist_motor_name])
+
+        # Cible: pose initiale
+        tgt_pan = self.initial_pose_deg[self.pan_motor_name]
+        tgt_lift = self.initial_pose_deg[self.lift_motor_name]
+        tgt_elbow = self.initial_pose_deg[self.elbow_motor_name]
+        tgt_wrist = self.initial_pose_deg[self.wrist_motor_name]
+
+        # Progression limitée par vitesses max
+        next_pan = current_pan_deg + float(np.clip(tgt_pan - current_pan_deg, -self.max_speed_pan * dt, self.max_speed_pan * dt))
+        next_lift = current_lift_deg + float(np.clip(tgt_lift - current_lift_deg, -self.max_speed_lift * dt, self.max_speed_lift * dt))
+        next_elbow = current_elbow_deg + float(np.clip(tgt_elbow - current_elbow_deg, -self.max_speed_elbow * dt, self.max_speed_elbow * dt))
+        next_wrist = current_wrist_deg + float(np.clip(tgt_wrist - current_wrist_deg, -self.max_speed_wrist * dt, self.max_speed_wrist * dt))
+
+        # Publier la commande
+        msg = JointState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.name = [self.pan_motor_name, self.lift_motor_name, self.elbow_motor_name, self.wrist_motor_name]
+        msg.position = [
+            math.radians(next_pan), math.radians(next_lift), math.radians(next_elbow), math.radians(next_wrist)
+        ]
+        self.target_angles_publisher.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

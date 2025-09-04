@@ -34,6 +34,21 @@ ros2 param set /robot_controller_node kp_vert 0.004
 ros2 param set /robot_controller_node kd_vert 0.0015
 ```
 
+3bis) Sécurité et stabilité (optionnel)
+
+- Réduire le micro‑tremblement près du centre:
+
+```bash
+ros2 param set /robot_controller_node dead_zone_px 12   # 8..16 recommandé
+```
+
+- Comportement si la cible disparaît (retour sécurité vers la pose initiale après un délai):
+
+```bash
+ros2 param set /robot_controller_node no_detection_behavior home
+ros2 param set /robot_controller_node no_detection_timeout_s 4.0   # 3..5 s
+```
+
 4) Ce que l’on doit voir
 
 - `/image_debug` (bounding boxes) via `rqt_image_view`
