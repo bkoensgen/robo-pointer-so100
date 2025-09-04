@@ -31,6 +31,23 @@ ros2 launch robo_pointer_visual pipeline.launch.py \
   enable_interface:=false
 ```
 
+Mode mock (offline complet, simulation de `/joint_states`):
+
+```bash
+ros2 launch robo_pointer_visual pipeline.launch.py \
+  yolo_model:=/home/benja/ros2_ws/yolov8n.pt camera_index:=/dev/video0 \
+  interface_type:=mock
+```
+
+Vitesse simulée par articulation (deg/s) — exemples:
+
+```bash
+ros2 param set /mock_robot_interface sim_speed_deg_s.pan 90.0
+ros2 param set /mock_robot_interface sim_speed_deg_s.lift 60.0
+ros2 param set /mock_robot_interface sim_speed_deg_s.elbow 60.0
+ros2 param set /mock_robot_interface sim_speed_deg_s.wrist 120.0
+```
+
 3) Activer le PID (optionnel, à chaud)
 
 ```bash

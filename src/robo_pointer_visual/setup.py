@@ -28,7 +28,8 @@ setup(
         'console_scripts': [
             'vision_node = robo_pointer_visual.vision_node:main',
             'robot_controller_node = robo_pointer_visual.robot_controller_node:main',
-            'real_robot_interface = robo_pointer_visual.real_robot_interface:main'
+            'real_robot_interface = robo_pointer_visual.real_robot_interface:main',
+            'mock_robot_interface = robo_pointer_visual.mock_robot_interface_node:main'
         ],
     },
 )
