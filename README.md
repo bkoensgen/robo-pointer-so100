@@ -131,22 +131,20 @@ Plan B (si instable): documenter l’état atteint, enregistrer quand même un b
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Ce projet vise à contrôler un bras robotique SO-ARM100 (version LeRobot/Hugging Face) à l'aide d'une caméra montée sur le poignet ("eye-in-hand") pour détecter et suivre un objet de couleur rouge. Il s'agit d'un projet personnel d'apprentissage dans le cadre d'une reconversion vers la robotique logicielle.
+Ce projet vise à contrôler un bras robotique SO-ARM100 (version LeRobot/Hugging Face) à l'aide d'une caméra montée sur le poignet ("eye-in-hand") pour détecter et suivre un objet via YOLOv8 (Ultralytics). Il s'agit d'un projet personnel d'apprentissage dans le cadre d'une reconversion vers la robotique logicielle.
 
 **Objectif Principal :**
 Implémenter un système de visuo-servage simple mais fonctionnel en utilisant ROS 2 Humble, Python et OpenCV.
 
-**État Actuel (Branche `main` — Mai 2025) :**
+**État Actuel (Branche `main`) :**
 
 * L'architecture ROS 2 (3 nœuds principaux) est en place et communique.
-* Détection d’objet rouge basique via OpenCV (filtrage HSV) fonctionnelle.
+* Détection d’objet via YOLOv8 (Ultralytics) fonctionnelle (GPU si dispo, sinon CPU; FP16 sur CUDA).
 * Interface bas niveau avec les moteurs Feetech (`scservo_sdk` + `lerobot`) établie, utilisant `GroupSyncRead`/`GroupSyncWrite`.
 * Calibration manuelle des moteurs via un fichier JSON.
-* Contrôle **Pan (horizontal)** via un contrôleur Proportionnel.
-* **Cinématique Directe (FK)** et **Inverse (IK)** pour le plan vertical (épaule/coude) implémentée.
-* **Contrôleur PI** pour l’axe Y cartésien implémenté.
-* Compensation d’erreur angulaire locale (PI) pour le moteur de l’épaule (ID 2).
-* **Défi Actuel :** tuning et stabilisation du contrôle vertical (moteur épaule ID 2 peinant à monter contre la gravité). Ajustement des gains PI local et exploration d’une compensation de gravité explicite.
+* **Cinématique Directe (FK)** et **Inverse (IK)** (2R) pour l’élévation (épaule/coude).
+* Contrôleur bras: P/PID optionnel, dead‑zone, vitesse limitée, homing en absence prolongée de cible.
+* Interface robot réelle (Feetech) et mode mock (offline end‑to‑end).
 
 ---
 
