@@ -3,7 +3,7 @@
 <package format="3">
   <name>robo_pointer_visual</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>ROS 2 package for vision-based arm following on SO-ARM100: YOLOv8 vision, controller (FK/IK, PID optional), and robot interfaces (real + mock).</description>
   <maintainer email="benjamin.koensgen@gmail.com">benja</maintainer>
   <license>Apache-2.0</license>
 
