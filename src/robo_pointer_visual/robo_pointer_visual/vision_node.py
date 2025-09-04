@@ -10,6 +10,7 @@ from rcl_interfaces.msg import (
     SetParametersResult,
 )
 from sensor_msgs.msg import Image
+from std_msgs.msg import Bool, Float32
 import cv2
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Point
@@ -74,6 +75,8 @@ class VisionNode(Node):
         self.declare_parameter('image_topic', 'image_raw', ParameterDescriptor(description='Topic for output images'))
         self.declare_parameter('debug_image_topic', 'image_debug', ParameterDescriptor(description='Topic for debug images'))
         self.declare_parameter('target_topic', 'detected_target_point', ParameterDescriptor(description='Topic for detected target point'))
+        self.declare_parameter('detection_acquired_topic', 'detection_acquired', ParameterDescriptor(description='Topic for detection acquired flag'))
+        self.declare_parameter('detection_area_topic', 'detection_area', ParameterDescriptor(description='Topic for area of best target bbox'))
         
         camera_index_param = self.get_parameter('camera_index').get_parameter_value().string_value
         self.publish_rate = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
@@ -95,6 +98,8 @@ class VisionNode(Node):
         self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
         self.debug_image_topic = self.get_parameter('debug_image_topic').get_parameter_value().string_value
         self.target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
+        self.detection_acquired_topic = self.get_parameter('detection_acquired_topic').get_parameter_value().string_value
+        self.detection_area_topic = self.get_parameter('detection_area_topic').get_parameter_value().string_value
         
         # Callback de validation des mises à jour dynamiques
         self.add_on_set_parameters_callback(self._on_set_parameters)
@@ -140,6 +145,8 @@ class VisionNode(Node):
         self.consecutive_failures = 0
         self.max_consecutive_failures = 5
         self.last_known_target_point = Point(x=-1.0, y=-1.0, z=0.0)
+        self.detection_acquired = False
+        self.detection_area = 0.0
         self.data_lock = threading.Lock()
         self.is_running = True
         self.processing_thread = threading.Thread(target=self.processing_worker)
@@ -152,6 +159,8 @@ class VisionNode(Node):
         self.image_publisher = self.create_publisher(Image, self.image_topic, 10)
         self.debug_image_publisher = self.create_publisher(Image, self.debug_image_topic, 10)
         self.target_publisher = self.create_publisher(Point, self.target_topic, 10)
+        self.detection_acquired_pub = self.create_publisher(Bool, self.detection_acquired_topic, 10)
+        self.detection_area_pub = self.create_publisher(Float32, self.detection_area_topic, 10)
         self.timer = self.create_timer(1.0 / self.publish_rate, self.publish_callback)
         self.get_logger().info('YOLOv8 vision node running...')
     
@@ -294,6 +303,8 @@ class VisionNode(Node):
                     self.last_known_target_point = Point(x=float(best_target_center[0]), y=float(best_target_center[1]), z=0.0)
                 else:
                     self.last_known_target_point = Point(x=-1.0, y=-1.0, z=0.0)
+                self.detection_acquired = bool(target_is_acquired)
+                self.detection_area = float(largest_area)
         self.get_logger().info("Worker thread loop finished. Releasing camera now.")
         self.cap.release()
         self.get_logger().info("Camera released by worker thread.")
@@ -304,6 +315,8 @@ class VisionNode(Node):
             raw_frame = self.latest_frame
             debug_frame = self.latest_debug_frame
             target_point = self.last_known_target_point
+            det_acq = self.detection_acquired
+            det_area = self.detection_area
         if raw_frame is not None:
             if self.flip_code != 99:
                 raw_frame_to_publish = cv2.flip(raw_frame, self.flip_code)
@@ -314,6 +327,8 @@ class VisionNode(Node):
             self.image_publisher.publish(self.bridge.cv2_to_imgmsg(raw_frame_to_publish, "bgr8"))
             self.debug_image_publisher.publish(self.bridge.cv2_to_imgmsg(debug_frame_to_publish, "bgr8"))
         self.target_publisher.publish(target_point)
+        self.detection_acquired_pub.publish(Bool(data=det_acq))
+        self.detection_area_pub.publish(Float32(data=det_area))
     
     def destroy_node(self):
         self.get_logger().info('Shutting down vision node...')
