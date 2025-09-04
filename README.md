@@ -1,5 +1,91 @@
 # Robo-Pointer Visuel (SO-ARM100 / LeRobot)
 
+## Demo Quickstart (1 page)
+
+Objectif: lancer la chaîne vision → contrôleur bras → interface moteurs, observer les topics, et enregistrer un bag de 20–30 s pour rejouer.
+
+1) Build + source (si nécessaire)
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select robo_pointer_visual
+source ~/ros2_ws/install/setup.bash
+```
+
+2) Lancer la pipeline bras (YOLO → controller → interface)
+
+```bash
+ros2 launch robo_pointer_visual pipeline.launch.py \
+  yolo_model:=/home/benja/ros2_ws/yolov8n.pt \
+  camera_index:=/dev/video0 \
+  target_class_name:=bottle \
+  publish_rate_hz:=15.0 \
+  leader_arm_port:=/dev/ttyACM0
+```
+
+3) Activer le PID (optionnel, à chaud)
+
+```bash
+ros2 param set /robot_controller_node use_pid_control true
+# Ajuster si besoin (exemples) :
+ros2 param set /robot_controller_node kp_pan 0.006
+ros2 param set /robot_controller_node kd_pan 0.001
+ros2 param set /robot_controller_node kp_vert 0.004
+ros2 param set /robot_controller_node kd_vert 0.0015
+```
+
+4) Ce que l’on doit voir
+
+- `/image_debug` (bounding boxes) via `rqt_image_view`
+- `/detected_target_point` (Point) ≈ 10–20 Hz
+- `/joint_states` et `/target_joint_angles` stables
+
+Commandes utiles:
+
+```bash
+ros2 topic hz /detected_target_point
+ros2 topic hz /target_joint_angles
+ros2 topic echo /detected_target_point --once
+```
+
+5) Enregistrer un bag (20–30 s)
+
+```bash
+ros2 bag record -O follower_arm_demo \
+  /image_debug /detected_target_point /joint_states /target_joint_angles
+# Stopper l’enregistrement après 20–30 secondes (Ctrl+C)
+```
+
+6) Rejouer le bag (test offline du contrôleur)
+
+Cas A — Relecture des topics pour inspection:
+
+```bash
+ros2 bag play follower_arm_demo --loop
+ros2 topic hz /detected_target_point
+```
+
+Cas B — Rejouer et lancer seulement le contrôleur bras:
+
+```bash
+# Terminal 1: rejouer le bag (fournit /detected_target_point et /joint_states)
+ros2 bag play follower_arm_demo
+
+# Terminal 2: lancer le contrôleur seul (PID activé)
+ros2 run robo_pointer_visual robot_controller_node --ros-args -p use_pid_control:=true
+```
+
+7) Vérifications TF et diag (optionnel)
+
+- Pour visualiser les TF en RViz: `ros2 launch so100_description display.launch.py`
+- Echo TF (si robot_state_publisher lancé):
+
+```bash
+ros2 run tf2_ros tf2_echo base_link wrist_link
+```
+
+Plan B (si instable): documenter l’état atteint, enregistrer quand même un bag (20–30 s) et une courte vidéo (60–90 s).
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Ce projet vise à contrôler un bras robotique SO-ARM100 (version LeRobot/Hugging Face) à l'aide d'une caméra montée sur le poignet ("eye-in-hand") pour détecter et suivre un objet de couleur rouge. Il s'agit d'un projet personnel d'apprentissage dans le cadre d'une reconversion vers la robotique logicielle.
