@@ -6,6 +6,7 @@ from robo_pointer_visual.kinematics import (
     calculate_gravity_compensation_adj_deg,
     calculate_wrist_angle_for_horizontal,
     calculate_aim_offset,
+    L1, L2,
 )
 
 
@@ -61,6 +62,59 @@ def test_aim_offset_axis_aligned():
     dx, dy = calculate_aim_offset(0.0, 30.0, d)
     assert math.isclose(dx, d, abs_tol=1e-9)
     assert math.isclose(dy, 0.0, abs_tol=1e-9)
+
+
+def test_ik_reach_boundaries():
+    # Maximum reach (straight arm): D = L1 + L2
+    target_x = L1 + L2
+    target_y = 0.0
+    th1, th2, ok = calculate_ik(target_x, target_y)
+    assert ok is True
+    assert math.isclose(math.degrees(th1), 0.0, abs_tol=1e-6)
+    assert math.isclose(math.degrees(th2), 0.0, abs_tol=1e-6)
+
+    # Minimum reach (fully folded): D = |L1 - L2|
+    target_x = abs(L1 - L2)
+    target_y = 0.0
+    th1, th2, ok = calculate_ik(target_x, target_y)
+    assert ok is True
+    assert math.isclose(math.degrees(th1), 0.0, abs_tol=1e-6)
+    assert math.isclose(math.degrees(th2), 180.0, abs_tol=1e-6)
+
+
+def test_ik_out_of_reach_boundaries():
+    # Slightly beyond maximum reach should fail
+    eps = 1e-6
+    target_x = L1 + L2 + eps
+    target_y = 0.0
+    _, _, ok = calculate_ik(target_x, target_y)
+    assert ok is False
+
+    # Slightly within maximum reach should succeed
+    target_x = L1 + L2 - eps
+    target_y = 0.0
+    _, _, ok = calculate_ik(target_x, target_y)
+    assert ok is True
+
+
+def test_ik_round_trip_random_samples():
+    # Deterministic seed
+    import random
+    random.seed(42)
+    for _ in range(5):
+        t1_deg = random.uniform(-60.0, 60.0)
+        t2_deg = random.uniform(-60.0, 60.0)
+        x, y = calculate_fk_wrist(t1_deg, t2_deg)
+        th1, th2, ok = calculate_ik(x, y)
+        assert ok is True
+        assert math.isclose(math.degrees(th1), t1_deg, abs_tol=1e-3)
+        assert math.isclose(math.degrees(th2), t2_deg, abs_tol=1e-3)
+
+
+def test_ik_zero_distance_unhandled():
+    # At exactly 0 distance, IK should report failure per implementation guard
+    _, _, ok = calculate_ik(0.0, 0.0)
+    assert ok is False
     # 90°: offset along +Y
     dx, dy = calculate_aim_offset(90.0, 30.0, d)
     assert math.isclose(dx, 0.0, abs_tol=1e-9)
@@ -69,4 +123,3 @@ def test_aim_offset_axis_aligned():
     dx, dy = calculate_aim_offset(180.0, 30.0, d)
     assert math.isclose(dx, -d, abs_tol=1e-9)
     assert math.isclose(dy, 0.0, abs_tol=1e-9)
-
