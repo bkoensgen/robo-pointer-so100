@@ -70,6 +70,8 @@ ros2 topic hz /detected_target_point
 ros2 topic hz /target_joint_angles
 ros2 topic echo /detected_target_point --once
 ros2 topic list | rg 'joint_states|target_joint_angles'  # vérifier l'alignement des topics
+ros2 topic echo /detection_acquired --once   # true si la cible est acquise
+ros2 topic echo /detection_area --once       # aire du meilleur bbox
 ```
 
 5) Enregistrer un bag (20–30 s)

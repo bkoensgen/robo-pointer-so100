@@ -38,6 +38,15 @@ def generate_launch_description():
     # Robot interface args
     read_freq = LaunchConfiguration('read_frequency_hz')
     enable_interface = LaunchConfiguration('enable_interface')
+    publish_static_tf = LaunchConfiguration('publish_static_tf')
+    tf_parent = LaunchConfiguration('tf_parent_frame')
+    tf_child = LaunchConfiguration('tf_child_frame')
+    tf_x = LaunchConfiguration('tf_x')
+    tf_y = LaunchConfiguration('tf_y')
+    tf_z = LaunchConfiguration('tf_z')
+    tf_roll = LaunchConfiguration('tf_roll')
+    tf_pitch = LaunchConfiguration('tf_pitch')
+    tf_yaw = LaunchConfiguration('tf_yaw')
 
     return LaunchDescription([
         # Decls
@@ -61,6 +70,15 @@ def generate_launch_description():
         DeclareLaunchArgument('joint_states_topic', default_value='joint_states'),
         DeclareLaunchArgument('target_joint_angles_topic', default_value='target_joint_angles'),
         DeclareLaunchArgument('enable_interface', default_value='true'),
+        DeclareLaunchArgument('publish_static_tf', default_value='false'),
+        DeclareLaunchArgument('tf_parent_frame', default_value='wrist_link'),
+        DeclareLaunchArgument('tf_child_frame', default_value='camera_frame'),
+        DeclareLaunchArgument('tf_x', default_value='0.0'),
+        DeclareLaunchArgument('tf_y', default_value='0.0'),
+        DeclareLaunchArgument('tf_z', default_value='0.0'),
+        DeclareLaunchArgument('tf_roll', default_value='0.0'),
+        DeclareLaunchArgument('tf_pitch', default_value='0.0'),
+        DeclareLaunchArgument('tf_yaw', default_value='0.0'),
 
         # Nodes
         Node(
@@ -112,5 +130,13 @@ def generate_launch_description():
                 'joint_states_topic': joint_states_topic,
                 'target_joint_angles_topic': target_joint_angles_topic,
             }]
+        ),
+        # Optional static TF for RViz visualization (Euler angles order: roll pitch yaw)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='static_camera_tf',
+            condition=IfCondition(publish_static_tf),
+            arguments=[tf_x, tf_y, tf_z, tf_roll, tf_pitch, tf_yaw, tf_parent, tf_child]
         ),
     ])
