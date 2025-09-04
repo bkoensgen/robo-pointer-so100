@@ -76,6 +76,26 @@ class RobotControllerNode(Node):
         self.declare_parameter('image_width', 640, img_dim)
         self.declare_parameter('image_height', 480, img_dim)
 
+        # Optional PID-based visual servoing (kept off by default)
+        self.declare_parameter('use_pid_control', False)
+        # Pan PID
+        self.declare_parameter('kp_pan', 0.006)
+        self.declare_parameter('ki_pan', 0.0)
+        self.declare_parameter('kd_pan', 0.001)
+        self.declare_parameter('i_pan_min', -5.0)
+        self.declare_parameter('i_pan_max', 5.0)
+        # Vertical PID (acts on pixel Y; converted to meters via scale_y and to IK target)
+        self.declare_parameter('kp_vert', 0.004)
+        self.declare_parameter('ki_vert', 0.0)
+        self.declare_parameter('kd_vert', 0.0015)
+        self.declare_parameter('i_vert_min', -5.0)
+        self.declare_parameter('i_vert_max', 5.0)
+        # Per-joint speed limits (deg/s) using dotted parameter names for YAML mapping compatibility
+        self.declare_parameter('joint_speed_max_deg_s.pan', 60.0)
+        self.declare_parameter('joint_speed_max_deg_s.lift', 45.0)
+        self.declare_parameter('joint_speed_max_deg_s.elbow', 45.0)
+        self.declare_parameter('joint_speed_max_deg_s.wrist', 90.0)
+
         # Récupération des paramètres
         # Topics
         self.target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
@@ -98,6 +118,30 @@ class RobotControllerNode(Node):
         self.wrist_max_deg = self.get_parameter('wrist_angle_max_deg').get_parameter_value().double_value
         self.image_width = self.get_parameter('image_width').get_parameter_value().integer_value
         self.image_height = self.get_parameter('image_height').get_parameter_value().integer_value
+
+        # PID parameters
+        self.use_pid = bool(self.get_parameter('use_pid_control').get_parameter_value().bool_value)
+        self.kp_pan = float(self.get_parameter('kp_pan').get_parameter_value().double_value)
+        self.ki_pan = float(self.get_parameter('ki_pan').get_parameter_value().double_value)
+        self.kd_pan = float(self.get_parameter('kd_pan').get_parameter_value().double_value)
+        self.i_pan_min = float(self.get_parameter('i_pan_min').get_parameter_value().double_value)
+        self.i_pan_max = float(self.get_parameter('i_pan_max').get_parameter_value().double_value)
+        self.kp_vert = float(self.get_parameter('kp_vert').get_parameter_value().double_value)
+        self.ki_vert = float(self.get_parameter('ki_vert').get_parameter_value().double_value)
+        self.kd_vert = float(self.get_parameter('kd_vert').get_parameter_value().double_value)
+        self.i_vert_min = float(self.get_parameter('i_vert_min').get_parameter_value().double_value)
+        self.i_vert_max = float(self.get_parameter('i_vert_max').get_parameter_value().double_value)
+        self.max_speed_pan = float(self.get_parameter('joint_speed_max_deg_s.pan').get_parameter_value().double_value)
+        self.max_speed_lift = float(self.get_parameter('joint_speed_max_deg_s.lift').get_parameter_value().double_value)
+        self.max_speed_elbow = float(self.get_parameter('joint_speed_max_deg_s.elbow').get_parameter_value().double_value)
+        self.max_speed_wrist = float(self.get_parameter('joint_speed_max_deg_s.wrist').get_parameter_value().double_value)
+
+        # Internal PID state
+        self._ex_prev = 0.0
+        self._ey_prev = 0.0
+        self._ix = 0.0
+        self._iy = 0.0
+        self._last_time_ns = self.get_clock().now().nanoseconds
         
         self.current_joint_states = None
         self.pan_motor_name = "shoulder_pan"
@@ -173,6 +217,20 @@ class RobotControllerNode(Node):
             elif n in ('image_width','image_height'):
                 if p.type_ != Parameter.Type.INTEGER or as_int(p) <= 0:
                     return SetParametersResult(successful=False, reason=f'{n} must be a positive integer')
+            elif n in ('kp_pan','ki_pan','kd_pan','kp_vert','ki_vert','kd_vert','i_pan_min','i_pan_max','i_vert_min','i_vert_max'):
+                if p.type_ != Parameter.Type.DOUBLE:
+                    return SetParametersResult(successful=False, reason=f'{n} must be a float')
+            elif n in ('use_pid_control',):
+                if p.type_ != Parameter.Type.BOOL:
+                    return SetParametersResult(successful=False, reason=f'{n} must be a bool')
+            elif n in (
+                'joint_speed_max_deg_s.pan',
+                'joint_speed_max_deg_s.lift',
+                'joint_speed_max_deg_s.elbow',
+                'joint_speed_max_deg_s.wrist',
+            ):
+                if p.type_ != Parameter.Type.DOUBLE or as_float(p) <= 0.0:
+                    return SetParametersResult(successful=False, reason=f'{n} must be > 0 (deg/s)')
 
         # Cohérence min <= max (utilise les valeurs courantes)
         lift_min = float(self.get_parameter('lift_angle_min_deg').value)
@@ -183,6 +241,11 @@ class RobotControllerNode(Node):
         pan_max = float(self.get_parameter('pan_angle_max_deg').value)
         wrist_min = float(self.get_parameter('wrist_angle_min_deg').value)
         wrist_max = float(self.get_parameter('wrist_angle_max_deg').value)
+        # Integral clamps
+        i_pan_min = float(self.get_parameter('i_pan_min').value)
+        i_pan_max = float(self.get_parameter('i_pan_max').value)
+        i_vert_min = float(self.get_parameter('i_vert_min').value)
+        i_vert_max = float(self.get_parameter('i_vert_max').value)
 
         if lift_min > lift_max:
             return SetParametersResult(successful=False, reason='lift_angle_min_deg must be <= lift_angle_max_deg')
@@ -192,6 +255,33 @@ class RobotControllerNode(Node):
             return SetParametersResult(successful=False, reason='pan_angle_min_deg must be <= pan_angle_max_deg')
         if wrist_min > wrist_max:
             return SetParametersResult(successful=False, reason='wrist_angle_min_deg must be <= wrist_angle_max_deg')
+        if i_pan_min > i_pan_max:
+            return SetParametersResult(successful=False, reason='i_pan_min must be <= i_pan_max')
+        if i_vert_min > i_vert_max:
+            return SetParametersResult(successful=False, reason='i_vert_min must be <= i_vert_max')
+
+        # Apply updates to internal fields for dynamic tuning
+        for p in params:
+            n = p.name
+            try:
+                if n == 'use_pid_control':
+                    self.use_pid = bool(p.value)
+                elif n in ('kp_pan','ki_pan','kd_pan'):
+                    setattr(self, n, float(p.value))
+                elif n in ('kp_vert','ki_vert','kd_vert'):
+                    setattr(self, n, float(p.value))
+                elif n in ('i_pan_min','i_pan_max','i_vert_min','i_vert_max'):
+                    setattr(self, n, float(p.value))
+                elif n == 'joint_speed_max_deg_s.pan':
+                    self.max_speed_pan = float(p.value)
+                elif n == 'joint_speed_max_deg_s.lift':
+                    self.max_speed_lift = float(p.value)
+                elif n == 'joint_speed_max_deg_s.elbow':
+                    self.max_speed_elbow = float(p.value)
+                elif n == 'joint_speed_max_deg_s.wrist':
+                    self.max_speed_wrist = float(p.value)
+            except Exception:
+                pass
 
         return SetParametersResult(successful=True)
 
@@ -208,16 +298,43 @@ class RobotControllerNode(Node):
             current_elbow_deg = joint_map.get(self.elbow_motor_name, self.initial_pose_deg[self.elbow_motor_name])
 
             current_xw, current_yw = calculate_fk_wrist(current_lift_deg, current_elbow_deg)
-            
+
+            # Pixel errors relative to image center
             error_x = msg.x - (self.image_width / 2.0)
             error_y = msg.y - (self.image_height / 2.0)
 
-            target_pan_deg = current_pan_deg - (error_x * self.scale_x)
+            # Time delta for PID and slew-rate limiting
+            now_ns = self.get_clock().now().nanoseconds
+            dt = max((now_ns - self._last_time_ns) * 1e-9, 1e-3)
+            self._last_time_ns = now_ns
 
-            # L'axe Y de l'image est inversé par rapport à l'axe Y cartésien du robot
-            delta_yw = error_y * self.scale_y
-            perceived_target_yw = current_yw + delta_yw
-            perceived_target_xw = current_xw
+            if self.use_pid:
+                # --- PAN (horizontal) PID ---
+                dex = (error_x - self._ex_prev) / dt
+                self._ix = float(np.clip(self._ix + error_x * dt, self.i_pan_min, self.i_pan_max))
+                # Sign convention: positive error_x means target to the right -> rotate pan negative
+                u_pan_deg_per_s = - (self.kp_pan * error_x + self.kd_pan * dex + self.ki_pan * self._ix)
+                max_delta_pan = self.max_speed_pan * dt
+
+                # --- VERTICAL PID (uses IK) ---
+                dey = (error_y - self._ey_prev) / dt
+                self._iy = float(np.clip(self._iy + error_y * dt, self.i_vert_min, self.i_vert_max))
+                # Convert vertical control into a small cartesian delta (meters)
+                delta_yw = (self.kp_vert * error_y + self.kd_vert * dey + self.ki_vert * self._iy) * self.scale_y * dt
+                perceived_target_yw = current_yw + delta_yw
+                perceived_target_xw = current_xw
+
+                # Update previous errors
+                self._ex_prev = error_x
+                self._ey_prev = error_y
+            else:
+                # Legacy proportional behavior
+                u_pan_deg_per_s = - (error_x * self.scale_x) / max(dt, 1e-3)
+                max_delta_pan = self.max_speed_pan * dt
+                # L'axe Y de l'image est inversé par rapport à l'axe Y cartésien du robot
+                delta_yw = error_y * self.scale_y
+                perceived_target_yw = current_yw + delta_yw
+                perceived_target_xw = current_xw
 
             # Compenser le décalage de la caméra pour trouver la cible IK réelle
             final_arm_orientation_deg = -(current_lift_deg + current_elbow_deg)
@@ -238,13 +355,22 @@ class RobotControllerNode(Node):
             compensated_lift_deg = ideal_lift_deg + gravity_lift_adj
             compensated_elbow_deg = ideal_elbow_deg + gravity_elbow_adj
 
+            # Pan desired (deg) from rate command with slew limit
+            pan_desired_deg = current_pan_deg + float(np.clip(u_pan_deg_per_s * dt, -max_delta_pan, max_delta_pan))
             target_wrist_deg = calculate_wrist_angle_for_horizontal(compensated_lift_deg, compensated_elbow_deg)
 
-            # Limiter les angles finaux aux bornes physiques
-            final_pan_deg = np.clip(target_pan_deg, self.pan_min_deg, self.pan_max_deg)
-            final_lift_deg = np.clip(compensated_lift_deg, self.lift_min_deg, self.lift_max_deg)
-            final_elbow_deg = np.clip(compensated_elbow_deg, self.elbow_min_deg, self.elbow_max_deg)
-            final_wrist_deg = np.clip(target_wrist_deg, self.wrist_min_deg, self.wrist_max_deg)
+            # Clip to physical limits first
+            pan_phys = float(np.clip(pan_desired_deg, self.pan_min_deg, self.pan_max_deg))
+            lift_phys = float(np.clip(compensated_lift_deg, self.lift_min_deg, self.lift_max_deg))
+            elbow_phys = float(np.clip(compensated_elbow_deg, self.elbow_min_deg, self.elbow_max_deg))
+            wrist_phys = float(np.clip(target_wrist_deg, self.wrist_min_deg, self.wrist_max_deg))
+
+            # Rate-limit per joint (deg/s) relative to current position
+            current_wrist_deg = joint_map.get(self.wrist_motor_name, self.initial_pose_deg[self.wrist_motor_name])
+            final_pan_deg = current_pan_deg + float(np.clip(pan_phys - current_pan_deg, -self.max_speed_pan * dt, self.max_speed_pan * dt))
+            final_lift_deg = current_lift_deg + float(np.clip(lift_phys - current_lift_deg, -self.max_speed_lift * dt, self.max_speed_lift * dt))
+            final_elbow_deg = current_elbow_deg + float(np.clip(elbow_phys - current_elbow_deg, -self.max_speed_elbow * dt, self.max_speed_elbow * dt))
+            final_wrist_deg = current_wrist_deg + float(np.clip(wrist_phys - current_wrist_deg, -self.max_speed_wrist * dt, self.max_speed_wrist * dt))
             
             self.get_logger().info(f"Angles Cibles (Deg): Pan={final_pan_deg:.1f}, Lift={final_lift_deg:.1f}")
             

@@ -57,3 +57,32 @@ robot_controller_node:
     pan_angle_max_deg: 110.0
     wrist_angle_min_deg: -100.0
     wrist_angle_max_deg: 100.0
+
+    # --- PID Control (arm follower) ---
+    # NOTE: These are added as a reference and are commented out to
+    # avoid undeclared-parameter errors until RobotControllerNode
+    # explicitly declares/uses them. Uncomment after the code update.
+    # use_pid_control: true
+
+    # # Pan (horizontal) PID gains
+    # kp_pan: 0.006
+    # ki_pan: 0.0
+    # kd_pan: 0.001
+    # # Integral clamp for pan (deg-equivalent per controller internal scale)
+    # i_pan_min: -5.0
+    # i_pan_max:  5.0
+
+    # # Vertical tracking PID gains (acts on pixel Y → IK target)
+    # kp_vert: 0.004
+    # ki_vert: 0.0
+    # kd_vert: 0.0015
+    # # Integral clamp for vertical controller
+    # i_vert_min: -5.0
+    # i_vert_max:  5.0
+
+    # # Per-joint maximum speeds (deg/s) for slew-rate limiting
+    # joint_speed_max_deg_s:
+    #   pan: 60.0
+    #   lift: 45.0
+    #   elbow: 45.0
+    #   wrist: 90.0
