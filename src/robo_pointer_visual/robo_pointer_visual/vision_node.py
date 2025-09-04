@@ -2,6 +2,13 @@ import torch
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.parameter import Parameter
+from rcl_interfaces.msg import (
+    ParameterDescriptor,
+    FloatingPointRange,
+    IntegerRange,
+    SetParametersResult,
+)
 from sensor_msgs.msg import Image
 import cv2
 from cv_bridge import CvBridge
@@ -21,25 +28,52 @@ class VisionNode(Node):
     def __init__(self):
         super().__init__('vision_node')
         self.get_logger().info('Vision node starting with async processing.')
-        # --- Paramètres ---
-        self.declare_parameter('camera_index', '/dev/video0')
-        self.declare_parameter('publish_rate_hz', 20.0)
-        self.declare_parameter('yolo_model', 'yolov8n.pt')
-        self.declare_parameter('device', 'auto')  # 'auto' | 'cuda' | 'cpu'
-        self.declare_parameter('target_class_name', 'bottle')
-        self.declare_parameter('confidence_threshold', 0.5)
-        self.declare_parameter('flip_code', -1)
-        self.declare_parameter('persistence_frames_to_acquire', 3)
-        self.declare_parameter('persistence_frames_to_lose', 5)
-        self.declare_parameter('camera_backend', 'v4l2')  # 'auto', 'v4l2', 'gstreamer'
-        self.declare_parameter('video_fourcc', 'MJPG')
-        self.declare_parameter('frame_width', 640)
-        self.declare_parameter('frame_height', 480)
-        self.declare_parameter('frame_rate', 30.0)
+        # --- Paramètres + Validation ---
+        # Descripteurs numériques
+        float_0_1 = ParameterDescriptor(
+            description='Probability threshold in [0,1]',
+            floating_point_range=[FloatingPointRange(from_value=0.0, to_value=1.0, step=0.0)],
+        )
+        rate_pos = ParameterDescriptor(
+            description='Positive frequency (Hz)',
+            floating_point_range=[FloatingPointRange(from_value=0.1, to_value=480.0, step=0.0)],
+        )
+        fps_pos = ParameterDescriptor(
+            description='Camera FPS (>0)',
+            floating_point_range=[FloatingPointRange(from_value=1.0, to_value=240.0, step=0.0)],
+        )
+        int_pos = ParameterDescriptor(
+            description='Positive integer',
+            integer_range=[IntegerRange(from_value=1, to_value=10_000, step=1)],
+        )
+        int_dim = ParameterDescriptor(
+            description='Positive image dimension (px)',
+            integer_range=[IntegerRange(from_value=16, to_value=16_384, step=1)],
+        )
+        flip_any = ParameterDescriptor(
+            description='OpenCV flip code: -1, 0, 1, or 99 (no flip)',
+            integer_range=[IntegerRange(from_value=-1, to_value=99, step=1)],
+        )
+
+        # Déclaration avec descripteurs
+        self.declare_parameter('camera_index', '/dev/video0', ParameterDescriptor(description='Camera device path or index'))
+        self.declare_parameter('publish_rate_hz', 20.0, rate_pos)
+        self.declare_parameter('yolo_model', 'yolov8n.pt', ParameterDescriptor(description='YOLO checkpoint path or name'))
+        self.declare_parameter('device', 'auto', ParameterDescriptor(description="Device: 'auto'|'cuda'|'cpu'"))
+        self.declare_parameter('target_class_name', 'bottle', ParameterDescriptor(description='Target class to track'))
+        self.declare_parameter('confidence_threshold', 0.5, float_0_1)
+        self.declare_parameter('flip_code', -1, flip_any)
+        self.declare_parameter('persistence_frames_to_acquire', 3, int_pos)
+        self.declare_parameter('persistence_frames_to_lose', 5, int_pos)
+        self.declare_parameter('camera_backend', 'v4l2', ParameterDescriptor(description="Camera backend: 'auto'|'v4l2'|'gstreamer'"))
+        self.declare_parameter('video_fourcc', 'MJPG', ParameterDescriptor(description='FOURCC 4-letter code'))
+        self.declare_parameter('frame_width', 640, int_dim)
+        self.declare_parameter('frame_height', 480, int_dim)
+        self.declare_parameter('frame_rate', 30.0, fps_pos)
         # Topics (paramétrables; valeurs par défaut relatives pour faciliter le namespacing)
-        self.declare_parameter('image_topic', 'image_raw')
-        self.declare_parameter('debug_image_topic', 'image_debug')
-        self.declare_parameter('target_topic', 'detected_target_point')
+        self.declare_parameter('image_topic', 'image_raw', ParameterDescriptor(description='Topic for output images'))
+        self.declare_parameter('debug_image_topic', 'image_debug', ParameterDescriptor(description='Topic for debug images'))
+        self.declare_parameter('target_topic', 'detected_target_point', ParameterDescriptor(description='Topic for detected target point'))
         
         camera_index_param = self.get_parameter('camera_index').get_parameter_value().string_value
         self.publish_rate = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
@@ -62,6 +96,9 @@ class VisionNode(Node):
         self.debug_image_topic = self.get_parameter('debug_image_topic').get_parameter_value().string_value
         self.target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
         
+        # Callback de validation des mises à jour dynamiques
+        self.add_on_set_parameters_callback(self._on_set_parameters)
+
         self.get_logger().info(f"Targeting Class: '{self.target_class_name}' with confidence > {self.confidence_threshold}")
         # Initialisation du modèle YOLO avec sélection du device
         try:
@@ -163,6 +200,42 @@ class VisionNode(Node):
         # Attendre que la caméra se stabilise
         time.sleep(1.0)
         return True
+
+    def _on_set_parameters(self, params: list[Parameter]) -> SetParametersResult:
+        """Valide certains paramètres lorsqu'ils sont modifiés à chaud.
+        N'interrompt pas l'exécution en cours; rejette les valeurs invalides.
+        """
+        allowed_flip = {-1, 0, 1, 99}
+        allowed_device = {'auto', 'cuda', 'cpu'}
+        allowed_backend = {'auto', 'v4l2', 'gstreamer'}
+
+        for p in params:
+            if p.name == 'flip_code':
+                if p.type_ != Parameter.Type.INTEGER or p.value not in allowed_flip:
+                    return SetParametersResult(successful=False, reason='flip_code must be one of {-1,0,1,99}')
+            elif p.name == 'confidence_threshold':
+                if p.type_ != Parameter.Type.DOUBLE or not (0.0 <= float(p.value) <= 1.0):
+                    return SetParametersResult(successful=False, reason='confidence_threshold must be in [0,1]')
+            elif p.name == 'frame_rate':
+                if p.type_ != Parameter.Type.DOUBLE or float(p.value) <= 0.0:
+                    return SetParametersResult(successful=False, reason='frame_rate must be > 0')
+            elif p.name in ('frame_width', 'frame_height'):
+                if p.type_ != Parameter.Type.INTEGER or int(p.value) <= 0:
+                    return SetParametersResult(successful=False, reason=f'{p.name} must be a positive integer')
+            elif p.name in ('persistence_frames_to_acquire', 'persistence_frames_to_lose'):
+                if p.type_ != Parameter.Type.INTEGER or int(p.value) < 0:
+                    return SetParametersResult(successful=False, reason=f'{p.name} must be >= 0')
+            elif p.name == 'device':
+                if p.type_ != Parameter.Type.STRING or str(p.value).lower() not in allowed_device:
+                    return SetParametersResult(successful=False, reason="device must be 'auto'|'cuda'|'cpu'")
+            elif p.name == 'camera_backend':
+                if p.type_ != Parameter.Type.STRING or str(p.value).lower() not in allowed_backend:
+                    return SetParametersResult(successful=False, reason="camera_backend must be 'auto'|'v4l2'|'gstreamer'")
+            elif p.name == 'video_fourcc':
+                v = str(p.value)
+                if len(v) != 4 or not v.isascii():
+                    return SetParametersResult(successful=False, reason='video_fourcc must be a 4-character ASCII code (e.g., MJPG)')
+        return SetParametersResult(successful=True)
 
     def capture_worker(self):
         """Capture en continu et alimente la queue sans jamais bloquer."""
