@@ -1,0 +1,49 @@
+name: ros-python-tests
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  ros-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup ROS 2 Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+      - name: Install ROS Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ros-humble-ros-base \
+            ros-humble-launch \
+            ros-humble-launch-ros \
+            ros-humble-geometry-msgs \
+            ros-humble-sensor-msgs \
+            ros-humble-ament-index-python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest numpy
+      - name: Source ROS and set PYTHONPATH
+        shell: bash
+        run: |
+          echo "source /opt/ros/humble/setup.bash" >> $GITHUB_ENV
+          echo "PYTHONPATH=${GITHUB_WORKSPACE}/src/robo_pointer_visual" >> $GITHUB_ENV
+      - name: Run ROS-dependent Python tests
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          pytest -q \
+            src/robo_pointer_visual/test/test_calibration_logic.py \
+            src/robo_pointer_visual/test/test_calibration_edges.py \
+            src/robo_pointer_visual/test/test_controller_safety.py \
+            src/robo_pointer_visual/test/test_launch_pipeline_structure.py \
+            src/robo_pointer_visual/test/test_mock_interface.py
+
