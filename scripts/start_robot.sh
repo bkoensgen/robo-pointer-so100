@@ -6,7 +6,8 @@
 SESSION_NAME="robot_dev"
 
 # Répertoire racine du repo (absolu)
-REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# (ce script est dans scripts/, on remonte d'un cran)
+REPO_ROOT="$(cd "$(dirname "$0")"/.. && pwd)"
 
 # Chemins essentiels pour l'environnement
 LEROBOT_PATH="/home/benja/lerobot"
@@ -81,7 +82,7 @@ tmux kill-session -t $SESSION_NAME 2>/dev/null || true
 SETUP_CMDS="source ${CONDA_BASE_PATH}/etc/profile.d/conda.sh && \
 conda activate lerobot && \
 export LEROBOT_PATH=\"${LEROBOT_PATH}\" && \
-source ${REPO_ROOT}/scripts/env.sh && \
+source \"${REPO_ROOT}/scripts/env.sh\" && \
 echo '--- Environnement ROS & Lerobot OK, lancement du nœud ---'"
 
 echo "Création de la nouvelle session tmux '$SESSION_NAME' (mode=$MODE)..."
