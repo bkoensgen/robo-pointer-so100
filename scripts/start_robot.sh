@@ -118,3 +118,4 @@ tmux select-layout -t $SESSION_NAME:robot_pipeline 'tiled'
 echo "Attaching to tmux session '$SESSION_NAME'. Pour détacher: Ctrl+b puis d."
 sleep 1
 tmux attach-session -t $SESSION_NAME
+
