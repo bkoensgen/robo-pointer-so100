@@ -1,0 +1,14 @@
+robot_controller_node:
+  ros__parameters:
+    # Enable PID and smoothing for a stable mock demo
+    use_pid_control: true
+    dead_zone_px: 12
+    no_detection_behavior: 'home'
+    no_detection_timeout_s: 4.0
+    # Safe per-joint speeds (deg/s)
+    joint_speed_max_deg_s:
+      pan: 60.0
+      lift: 45.0
+      elbow: 45.0
+      wrist: 90.0
+
