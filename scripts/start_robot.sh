@@ -34,16 +34,27 @@ VIDEO_FOURCC="MJPG"
 # Par défaut, on utilise le modèle "medium" (poids au racine du repo)
 YOLO_CHECKPOINT="yolov8m.pt"
 
-# On regarde le premier argument passé au script
-if [ "$1" == "nano" ]; then
-  YOLO_CHECKPOINT="yolov8n.pt"
-elif [ "$1" == "medium" ]; then
-  YOLO_CHECKPOINT="yolov8m.pt"
-elif [ "$1" == "large" ]; then
-  YOLO_CHECKPOINT="yolov8l.pt"
-elif [ -n "$1" ]; then
-  echo "Erreur : modèle '$1' non reconnu. Options valides : nano, medium, large."
-  exit 1
+# Mode: real (défaut) ou mock
+MODE="real"
+
+# Parsing des arguments: [mock|real] [nano|medium|large]
+ARG1="${1:-}"
+ARG2="${2:-}"
+
+case "$ARG1" in
+  mock) MODE="mock"; shift ;;
+  real) MODE="real"; shift ;;
+esac
+
+CASE_MODEL="${1:-}"
+if [ "$CASE_MODEL" = "nano" ]; then
+  YOLO_CHECKPOINT="yolov8n.pt"; shift
+elif [ "$CASE_MODEL" = "medium" ]; then
+  YOLO_CHECKPOINT="yolov8m.pt"; shift
+elif [ "$CASE_MODEL" = "large" ]; then
+  YOLO_CHECKPOINT="yolov8l.pt"; shift
+elif [ -n "$CASE_MODEL" ]; then
+  echo "Erreur : argument '$CASE_MODEL' non reconnu. Usage: start_robot.sh [mock|real] [nano|medium|large]"; exit 1
 fi
 
 # Chemin absolu des poids (évite un téléchargement réseau involontaire)
@@ -73,7 +84,7 @@ export LEROBOT_PATH=\"${LEROBOT_PATH}\" && \
 source ${REPO_ROOT}/scripts/env.sh && \
 echo '--- Environnement ROS & Lerobot OK, lancement du nœud ---'"
 
-echo "Création de la nouvelle session tmux '$SESSION_NAME'..."
+echo "Création de la nouvelle session tmux '$SESSION_NAME' (mode=$MODE)..."
 tmux new-session -d -s $SESSION_NAME -n "robot_pipeline" -x "$(tput cols)" -y "$(tput lines)"
 tmux split-window -h -t $SESSION_NAME:robot_pipeline.0
 tmux split-window -v -t $SESSION_NAME:robot_pipeline.1
@@ -104,12 +115,17 @@ CMD_CONTROLLER="$SETUP_CMDS && ros2 run robo_pointer_visual robot_controller_nod
     -p pixel_to_cartesian_scale_y:=$SCALE_Y"
 tmux send-keys -t $SESSION_NAME:robot_pipeline.1 "$CMD_CONTROLLER" C-m
 
-# Panneau 2 (à droite): real_robot_interface
-LOG_FILE="~/real_robot_interface_$(date +%F_%H-%M-%S).log"
+# Panneau 2 (à droite): interface (réelle ou mock)
+LOG_FILE="~/robot_interface_$(date +%F_%H-%M-%S).log"
 LEADER_ARM_PORT="/dev/ttyACM0"
-CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args \
+if [ "$MODE" = "mock" ]; then
+  CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual mock_robot_interface --ros-args \
+    --log-level mock_robot_interface:=info > $LOG_FILE 2>&1"
+else
+  CMD_ROBOT="$SETUP_CMDS && ros2 run robo_pointer_visual real_robot_interface --ros-args \
     -p leader_arm_port:='$LEADER_ARM_PORT' \
     --log-level real_robot_interface:=info > $LOG_FILE 2>&1"
+fi
 tmux send-keys -t $SESSION_NAME:robot_pipeline.2 "$CMD_ROBOT" C-m
 
 tmux select-layout -t $SESSION_NAME:robot_pipeline 'tiled'
