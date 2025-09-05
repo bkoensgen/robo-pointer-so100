@@ -8,13 +8,13 @@ def test_fk_simple_positions():
     """Teste la cinématique directe dans des positions simples et connues."""
     # Test 1: Bras tendu à l'horizontale (0, 0 degrés)
     x, y = calculate_fk_wrist(0.0, 0.0)
-    assert math.isclose(x, 0.116 + 0.135) # L1 + L2
-    assert math.isclose(y, 0.0)
+    assert math.isclose(x, 0.116 + 0.135, rel_tol=1e-12, abs_tol=1e-12)  # L1 + L2
+    assert math.isclose(y, 0.0, abs_tol=1e-12)
 
     # Test 2: Bras à la verticale (+90, 0 degrés)
     x, y = calculate_fk_wrist(90.0, 0.0)
-    assert math.isclose(x, 0.0)
-    assert math.isclose(y, 0.116 + 0.135) # L1 + L2
+    assert math.isclose(x, 0.0, abs_tol=1e-12)
+    assert math.isclose(y, 0.116 + 0.135, rel_tol=1e-12, abs_tol=1e-12)  # L1 + L2
 
 def test_ik_simple_positions():
     """Teste que la cinématique inverse retrouve bien les angles des positions simples."""
@@ -23,8 +23,8 @@ def test_ik_simple_positions():
     target_y = 0.0
     theta1_rad, theta2_rad, ok = calculate_ik(target_x, target_y)
     assert ok is True
-    assert math.isclose(math.degrees(theta1_rad), 0.0)
-    assert math.isclose(math.degrees(theta2_rad), 0.0)
+    assert math.isclose(math.degrees(theta1_rad), 0.0, abs_tol=1e-4)
+    assert math.isclose(math.degrees(theta2_rad), 0.0, abs_tol=1e-4)
 
 def test_ik_out_of_reach():
     """Teste que l'IK échoue correctement quand la cible est trop loin."""

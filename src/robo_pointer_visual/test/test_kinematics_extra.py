@@ -78,16 +78,19 @@ def test_ik_reach_boundaries():
     target_y = 0.0
     th1, th2, ok = calculate_ik(target_x, target_y)
     assert ok is True
-    assert math.isclose(math.degrees(th1), 0.0, abs_tol=1e-4)
-    assert math.isclose(math.degrees(th2), 0.0, abs_tol=1e-4)
+    # Verify position via FK instead of exact angles (robust to branch/wrap)
+    fkx, fky = calculate_fk_wrist(math.degrees(th1), math.degrees(th2))
+    assert math.isclose(fkx, target_x, rel_tol=1e-9, abs_tol=1e-9)
+    assert math.isclose(fky, target_y, rel_tol=1e-9, abs_tol=1e-9)
 
     # Minimum reach (fully folded): D = |L1 - L2|
     target_x = abs(L1 - L2)
     target_y = 0.0
     th1, th2, ok = calculate_ik(target_x, target_y)
     assert ok is True
-    assert math.isclose(math.degrees(th1), 0.0, abs_tol=1e-4)
-    assert math.isclose(math.degrees(th2), 180.0, abs_tol=1e-4)
+    fkx, fky = calculate_fk_wrist(math.degrees(th1), math.degrees(th2))
+    assert math.isclose(fkx, target_x, rel_tol=1e-9, abs_tol=1e-9)
+    assert math.isclose(fky, target_y, rel_tol=1e-9, abs_tol=1e-9)
 
 
 def test_ik_out_of_reach_boundaries():
@@ -115,8 +118,9 @@ def test_ik_round_trip_random_samples():
         x, y = calculate_fk_wrist(t1_deg, t2_deg)
         th1, th2, ok = calculate_ik(x, y)
         assert ok is True
-        assert math.isclose(math.degrees(th1), t1_deg, abs_tol=1e-3)
-        assert math.isclose(math.degrees(th2), t2_deg, abs_tol=1e-3)
+        fx, fy = calculate_fk_wrist(math.degrees(th1), math.degrees(th2))
+        assert math.isclose(fx, x, rel_tol=1e-9, abs_tol=1e-9)
+        assert math.isclose(fy, y, rel_tol=1e-9, abs_tol=1e-9)
 
 
 def test_ik_zero_distance_unhandled():
