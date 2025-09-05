@@ -39,6 +39,7 @@ def generate_launch_description():
     read_freq = LaunchConfiguration('read_frequency_hz')
     enable_interface = LaunchConfiguration('enable_interface')
     interface_type = LaunchConfiguration('interface_type')
+    enable_torque = LaunchConfiguration('enable_torque')
     publish_static_tf = LaunchConfiguration('publish_static_tf')
     tf_parent = LaunchConfiguration('tf_parent_frame')
     tf_child = LaunchConfiguration('tf_child_frame')
@@ -72,6 +73,7 @@ def generate_launch_description():
         DeclareLaunchArgument('target_joint_angles_topic', default_value='target_joint_angles'),
         DeclareLaunchArgument('enable_interface', default_value='true'),
         DeclareLaunchArgument('interface_type', default_value='real'),  # real|mock|none
+        DeclareLaunchArgument('enable_torque', default_value='true'),
         DeclareLaunchArgument('publish_static_tf', default_value='false'),
         DeclareLaunchArgument('tf_parent_frame', default_value='wrist_link'),
         DeclareLaunchArgument('tf_child_frame', default_value='camera_frame'),
@@ -131,6 +133,7 @@ def generate_launch_description():
                 'leader_arm_port': leader_arm_port,
                 'joint_states_topic': joint_states_topic,
                 'target_joint_angles_topic': target_joint_angles_topic,
+                'enable_torque': enable_torque,
             }]
         ),
         Node(
