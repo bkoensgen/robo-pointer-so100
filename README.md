@@ -276,9 +276,9 @@ sudo usermod -aG video  $USER
 Rendez le script de lancement exécutable et lancez-le :
 
 ```bash
-chmod +x ~/ros2_ws/start_robot.sh
+chmod +x ~/ros2_ws/scripts/start_robot.sh
 cd ~/ros2_ws
-./start_robot.sh
+./scripts/start_robot.sh
 ```
 
 Le script crée une session `tmux` nommée `robot_dev` avec trois panneaux :
