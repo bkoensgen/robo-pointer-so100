@@ -5,6 +5,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 from sensor_msgs.msg import JointState
+from rcl_interfaces.msg import SetParametersResult
 
 
 DEFAULT_MOTOR_ORDER: List[str] = [
@@ -59,6 +60,8 @@ class MockRobotInterfaceNode(Node):
             f"pan={self.max_speed['shoulder_pan']}, lift={self.max_speed['shoulder_lift']}, "
             f"elbow={self.max_speed['elbow_flex']}, wrist={self.max_speed['wrist_flex']}"
         )
+        # Dynamic parameter updates for speeds
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
     def _on_target(self, msg: JointState) -> None:
         # Map incoming joints to our tracked set
@@ -88,6 +91,38 @@ class MockRobotInterfaceNode(Node):
         js.position = [math.radians(self.current_deg[n]) for n in DEFAULT_MOTOR_ORDER]
         self.js_pub.publish(js)
 
+    def _on_set_parameters(self, params):
+        # Allow dynamic update of simulated speeds
+        for p in params:
+            n = p.name
+            if n == 'sim_speed_deg_s.pan':
+                try:
+                    v = float(p.value)
+                    if v <= 0.0:
+                        return SetParametersResult(successful=False, reason='sim_speed_deg_s.pan must be > 0')
+                    self.max_speed['shoulder_pan'] = v
+                except Exception:
+                    return SetParametersResult(successful=False, reason='invalid pan speed')
+            elif n == 'sim_speed_deg_s.lift':
+                try:
+                    v = float(p.value);  assert v > 0.0
+                    self.max_speed['shoulder_lift'] = v
+                except Exception:
+                    return SetParametersResult(successful=False, reason='invalid lift speed')
+            elif n == 'sim_speed_deg_s.elbow':
+                try:
+                    v = float(p.value);  assert v > 0.0
+                    self.max_speed['elbow_flex'] = v
+                except Exception:
+                    return SetParametersResult(successful=False, reason='invalid elbow speed')
+            elif n == 'sim_speed_deg_s.wrist':
+                try:
+                    v = float(p.value);  assert v > 0.0
+                    self.max_speed['wrist_flex'] = v
+                except Exception:
+                    return SetParametersResult(successful=False, reason='invalid wrist speed')
+        return SetParametersResult(successful=True)
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -110,4 +145,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-

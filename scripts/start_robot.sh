@@ -67,11 +67,10 @@ echo "Nettoyage d'une session tmux '$SESSION_NAME' existante..."
 tmux kill-session -t $SESSION_NAME 2>/dev/null || true
 
 # Commande de setup de base, partagée par tous les panneaux
-SETUP_CMDS="source /opt/ros/humble/setup.bash && \
-source ~/ros2_ws/install/setup.bash && \
-source ${CONDA_BASE_PATH}/etc/profile.d/conda.sh && \
+SETUP_CMDS="source ${CONDA_BASE_PATH}/etc/profile.d/conda.sh && \
 conda activate lerobot && \
-export PYTHONPATH=\"\${PYTHONPATH}:${LEROBOT_PATH}:${CONDA_SITE_PACKAGES}\" && \
+export LEROBOT_PATH=\"${LEROBOT_PATH}\" && \
+source ${REPO_ROOT}/scripts/env.sh && \
 echo '--- Environnement ROS & Lerobot OK, lancement du nœud ---'"
 
 echo "Création de la nouvelle session tmux '$SESSION_NAME'..."

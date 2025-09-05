@@ -95,10 +95,10 @@ def test_degree_mode_apply_wraparound_near_minus_180():
     motors_def = {"rot_joint": [1, "sts3215"]}
     res = MODEL_RESOLUTION["sts3215"]
     steps_per_180 = res / 2.0
-    # A raw value slightly above steps_per_180 should wrap to a negative angle
-    raw = np.array([int(steps_per_180 + 11)])  # 2048 + 11 => expect about - (11/2048)*180 deg
+    # A raw value slightly above steps_per_180 should wrap to a negative angle near -180°
+    raw = np.array([int(steps_per_180 + 11)])
     vals = apply_calibration(raw, ["rot_joint"], calib, motors_def)
     assert vals[0] < 0.0  # negative due to wrap
-    # magnitude close to expected small angle
-    expected_deg = - (11 / steps_per_180) * 180.0
+    # magnitude close to -180 + small positive delta
+    expected_deg = -180.0 + (11 / steps_per_180) * 180.0
     assert math.isclose(vals[0], expected_deg, rel_tol=1e-3, abs_tol=1e-2)
