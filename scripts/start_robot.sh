@@ -6,7 +6,8 @@
 SESSION_NAME="robot_dev"
 
 # Répertoire racine du repo (absolu)
-REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# (ce script est dans scripts/, on remonte d'un cran)
+REPO_ROOT="$(cd "$(dirname "$0")"/.. && pwd)"
 
 # Chemins essentiels pour l'environnement
 LEROBOT_PATH="/home/benja/lerobot"
@@ -81,15 +82,12 @@ tmux kill-session -t $SESSION_NAME 2>/dev/null || true
 SETUP_CMDS="source ${CONDA_BASE_PATH}/etc/profile.d/conda.sh && \
 conda activate lerobot && \
 export LEROBOT_PATH=\"${LEROBOT_PATH}\" && \
-source ${REPO_ROOT}/scripts/env.sh && \
+source \"${REPO_ROOT}/scripts/env.sh\" && \
 echo '--- Environnement ROS & Lerobot OK, lancement du nœud ---'"
 
 echo "Création de la nouvelle session tmux '$SESSION_NAME' (mode=$MODE)..."
-tmux new-session -d -s $SESSION_NAME -n "robot_pipeline" -x "$(tput cols)" -y "$(tput lines)"
-tmux split-window -h -t $SESSION_NAME:robot_pipeline.0
-tmux split-window -v -t $SESSION_NAME:robot_pipeline.1
 
-# --- Envoyer les commandes à chaque panneau ---
+# --- Préparer les commandes de chaque panneau ---
 
 # Panneau 0 (en haut à gauche): vision_node
 CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
@@ -105,16 +103,12 @@ CMD_VISION="$SETUP_CMDS && ros2 run robo_pointer_visual vision_node --ros-args \
     -p video_fourcc:=$VIDEO_FOURCC \
     -p publish_rate_hz:=15.0 \
     -p camera_backend:=v4l2 \
-    -p device:='$DEVICE'" \
-
-tmux send-keys -t $SESSION_NAME:robot_pipeline.0 "$CMD_VISION" C-m
+    -p device:='$DEVICE'"
 
 # Panneau 1 (en bas à gauche): robot_controller_node
 CMD_CONTROLLER="$SETUP_CMDS && ros2 run robo_pointer_visual robot_controller_node --ros-args \
     -p pixel_to_cartesian_scale_x:=$SCALE_X \
     -p pixel_to_cartesian_scale_y:=$SCALE_Y"
-tmux send-keys -t $SESSION_NAME:robot_pipeline.1 "$CMD_CONTROLLER" C-m
-
 # Panneau 2 (à droite): interface (réelle ou mock)
 LOG_FILE="~/robot_interface_$(date +%F_%H-%M-%S).log"
 LEADER_ARM_PORT="/dev/ttyACM0"
@@ -126,7 +120,17 @@ else
     -p leader_arm_port:='$LEADER_ARM_PORT' \
     --log-level real_robot_interface:=info > $LOG_FILE 2>&1"
 fi
-tmux send-keys -t $SESSION_NAME:robot_pipeline.2 "$CMD_ROBOT" C-m
+# --- Créer la session puis envoyer les commandes dans chaque pane ---
+tmux new-session -d -s "$SESSION_NAME" -n "robot_pipeline"
+# Pane 0 (vision)
+tmux send-keys -t "$SESSION_NAME:robot_pipeline.0" "$CMD_VISION" C-m
+# Split horizontal -> Pane 1 (controller)
+tmux split-window -h -t "$SESSION_NAME:robot_pipeline.0"
+tmux send-keys -t "$SESSION_NAME:robot_pipeline.1" "$CMD_CONTROLLER" C-m
+# Split vertical on right pane -> Pane 2 (interface)
+tmux split-window -v -t "$SESSION_NAME:robot_pipeline.1"
+tmux send-keys -t "$SESSION_NAME:robot_pipeline.2" "$CMD_ROBOT" C-m
+tmux set-option -t "$SESSION_NAME" remain-on-exit on
 
 tmux select-layout -t $SESSION_NAME:robot_pipeline 'tiled'
 
