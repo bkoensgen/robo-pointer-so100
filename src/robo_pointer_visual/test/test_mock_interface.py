@@ -55,7 +55,8 @@ def test_mock_single_tick_rate_limit():
         cmd_deg = [math.degrees(v) for v in cap.last.position]
         # Each joint should have moved by at most 60 deg toward target
         for i, n in enumerate(names):
-            expected = max(-60.0, min(60.0, tgt_deg[i] - 0.0))
+            speed = node.max_speed[n]
+            expected = max(-speed, min(speed, tgt_deg[i] - 0.0))
             assert math.isclose(cmd_deg[i], expected, abs_tol=1e-3)
     finally:
         node.destroy_node()
@@ -98,3 +99,32 @@ def test_mock_converges_after_multiple_ticks():
         if rclpy.ok():
             rclpy.shutdown()
 
+
+def test_mock_dynamic_speed_update_changes_rate_limit():
+    rclpy.init()
+    node = MockRobotInterfaceNode()
+    try:
+        node.timer.cancel()
+        cap = _CapPub()
+        node.js_pub = cap
+
+        names = list(node.current_deg.keys())
+        tgt_deg = [90.0, 0.0, 0.0, 0.0]
+        node._on_target(_js(names, tgt_deg))
+
+        # Force dt = 1.0 s
+        now_ns = node.get_clock().now().nanoseconds
+        node._last_tick = SimpleNamespace(nanoseconds=now_ns - int(1e9))
+
+        # Update pan speed to 30 deg/s dynamically
+        node.set_parameters([Parameter('sim_speed_deg_s.pan', Parameter.Type.DOUBLE, 30.0)])
+        node._tick()
+
+        assert cap.last is not None
+        cmd_deg = [math.degrees(v) for v in cap.last.position]
+        # Pan should have moved by 30 degrees toward 90
+        assert math.isclose(cmd_deg[0], 30.0, abs_tol=1e-3)
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
