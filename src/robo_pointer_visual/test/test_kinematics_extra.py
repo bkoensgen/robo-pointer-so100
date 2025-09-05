@@ -81,7 +81,8 @@ def test_ik_reach_boundaries():
     # Verify position via FK instead of exact angles (robust to branch/wrap)
     fkx, fky = calculate_fk_wrist(math.degrees(th1), math.degrees(th2))
     assert math.isclose(fkx, target_x, rel_tol=1e-9, abs_tol=1e-9)
-    assert math.isclose(fky, target_y, rel_tol=1e-9, abs_tol=1e-9)
+    # Near zero, allow a slightly larger absolute tolerance due to acos/clipping
+    assert math.isclose(fky, target_y, abs_tol=1e-8)
 
     # Minimum reach (fully folded): D = |L1 - L2|
     target_x = abs(L1 - L2)
@@ -90,7 +91,7 @@ def test_ik_reach_boundaries():
     assert ok is True
     fkx, fky = calculate_fk_wrist(math.degrees(th1), math.degrees(th2))
     assert math.isclose(fkx, target_x, rel_tol=1e-9, abs_tol=1e-9)
-    assert math.isclose(fky, target_y, rel_tol=1e-9, abs_tol=1e-9)
+    assert math.isclose(fky, target_y, abs_tol=1e-8)
 
 
 def test_ik_out_of_reach_boundaries():
