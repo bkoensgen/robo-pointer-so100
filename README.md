@@ -91,7 +91,17 @@ ros2 topic echo /detection_acquired --once   # true si la cible est acquise
 ros2 topic echo /detection_area --once       # aire du meilleur bbox
 ```
 
-5) Enregistrer un bag (20–30 s)
+5) Charger des profils de démo (optionnel)
+
+```bash
+# Profil mock recommandé (PID ON, dead-zone 12, homing):
+ros2 param load /robot_controller_node install/robo_pointer_visual/share/robo_pointer_visual/config/demo_mock.yaml
+
+# Profil réel (PID OFF au démarrage, vitesses conservatrices):
+ros2 param load /robot_controller_node install/robo_pointer_visual/share/robo_pointer_visual/config/demo_real.yaml
+```
+
+6) Enregistrer un bag (20–30 s)
 
 ```bash
 ros2 bag record -O follower_arm_demo \
@@ -99,7 +109,7 @@ ros2 bag record -O follower_arm_demo \
 # Stopper l’enregistrement après 20–30 secondes (Ctrl+C)
 ```
 
-6) Rejouer le bag (test offline du contrôleur)
+7) Rejouer le bag (test offline du contrôleur)
 
 Cas A — Relecture des topics pour inspection:
 
@@ -118,7 +128,7 @@ ros2 bag play follower_arm_demo
 ros2 run robo_pointer_visual robot_controller_node --ros-args -p use_pid_control:=true
 ```
 
-7) Vérifications TF et diag (optionnel)
+8) Vérifications TF et diag (optionnel)
 
 - Pour visualiser les TF en RViz: `ros2 launch so100_description display.launch.py`
 - Echo TF (si robot_state_publisher lancé):
@@ -278,7 +288,11 @@ Rendez le script de lancement exécutable et lancez-le :
 ```bash
 chmod +x ~/ros2_ws/scripts/start_robot.sh
 cd ~/ros2_ws
-./scripts/start_robot.sh
+# Mode réel (par défaut):
+./scripts/start_robot.sh [nano|medium|large]
+
+# Mode mock (offline complet):
+./scripts/start_robot.sh mock [nano|medium|large]
 ```
 
 Le script crée une session `tmux` nommée `robot_dev` avec trois panneaux :

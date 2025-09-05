@@ -1,0 +1,14 @@
+robot_controller_node:
+  ros__parameters:
+    # Start without PID; enable gradually when stable
+    use_pid_control: false
+    dead_zone_px: 14
+    no_detection_behavior: 'home'
+    no_detection_timeout_s: 4.0
+    # Conservative per-joint speeds (deg/s) for first trials
+    joint_speed_max_deg_s:
+      pan: 30.0
+      lift: 20.0
+      elbow: 20.0
+      wrist: 60.0
+
