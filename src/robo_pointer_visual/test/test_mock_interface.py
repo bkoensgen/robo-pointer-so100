@@ -122,8 +122,8 @@ def test_mock_dynamic_speed_update_changes_rate_limit():
 
         assert cap.last is not None
         cmd_deg = [math.degrees(v) for v in cap.last.position]
-        # Pan should have moved by 30 degrees toward 90
-        assert math.isclose(cmd_deg[0], 30.0, abs_tol=1e-3)
+        # Pan should have moved by ~30 degrees toward 90 (allow slight dt overhead)
+        assert math.isclose(cmd_deg[0], 30.0, abs_tol=1e-2)
     finally:
         node.destroy_node()
         if rclpy.ok():
