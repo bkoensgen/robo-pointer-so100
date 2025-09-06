@@ -182,9 +182,10 @@ fi
 
 # 7) Show one sample message from each key topic
 echo "[info] Sampling topics (once each)..."
-ros2 topic echo /detected_target_point --once --qos-durability volatile --qos-reliability reliable || true
-ros2 topic echo /target_joint_angles --once --qos-durability volatile --qos-reliability reliable || true
-ros2 topic echo /joint_states --once --qos-durability volatile --qos-reliability reliable || true
+ROS2_CLI="$REPO_ROOT/scripts/ros2_cli.sh"
+"$ROS2_CLI" topic echo /detected_target_point --once --qos-durability volatile --qos-reliability reliable || true
+"$ROS2_CLI" topic echo /target_joint_angles --once --qos-durability volatile --qos-reliability reliable || true
+"$ROS2_CLI" topic echo /joint_states --once --qos-durability volatile --qos-reliability reliable || true
 
 cat <<EOF
 [next]
