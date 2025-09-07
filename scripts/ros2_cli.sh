@@ -11,15 +11,20 @@ fi
 
 CMD=("$@")
 
-# Preserve minimal env needed for terminals/X11, reconstruct ROS env
-env -i HOME="$HOME" \
-  TERM="${TERM:-xterm-256color}" \
-  DISPLAY="${DISPLAY:-}" \
-  ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-}" \
-  ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-}" \
-  RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-}" \
-  FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-}" \
-  CYCLONEDDS_URI="${CYCLONEDDS_URI:-}" \
+# Build a clean env, but propagate essential ROS variables only if set
+ENV_ARGS=()
+ENV_ARGS+=(HOME="$HOME")
+ENV_ARGS+=(TERM="${TERM:-xterm-256color}")
+ENV_ARGS+=(DISPLAY="${DISPLAY:-}")
+
+# Only forward if non-empty to avoid issues like int("") on ROS_DOMAIN_ID
+if [ -n "${ROS_DOMAIN_ID:-}" ]; then ENV_ARGS+=(ROS_DOMAIN_ID="$ROS_DOMAIN_ID"); fi
+if [ -n "${ROS_LOCALHOST_ONLY:-}" ]; then ENV_ARGS+=(ROS_LOCALHOST_ONLY="$ROS_LOCALHOST_ONLY"); fi
+if [ -n "${RMW_IMPLEMENTATION:-}" ]; then ENV_ARGS+=(RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION"); fi
+if [ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]; then ENV_ARGS+=(FASTRTPS_DEFAULT_PROFILES_FILE="$FASTRTPS_DEFAULT_PROFILES_FILE"); fi
+if [ -n "${CYCLONEDDS_URI:-}" ]; then ENV_ARGS+=(CYCLONEDDS_URI="$CYCLONEDDS_URI"); fi
+
+env -i "${ENV_ARGS[@]}" \
   bash -lc '
     source /opt/ros/humble/setup.bash
     # Avoid user site interference
