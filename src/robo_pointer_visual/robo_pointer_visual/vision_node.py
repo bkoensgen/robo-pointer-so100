@@ -18,6 +18,7 @@ from ultralytics import YOLO
 import threading
 import time
 import queue
+import os
 
 class VisionNode(Node):
     """
@@ -134,8 +135,11 @@ class VisionNode(Node):
         except Exception as e:
             self.get_logger().fatal(f'Failed to load/configure YOLO model: {e}.'); rclpy.shutdown(); return
         self.bridge = CvBridge()
-        try: self.camera_capture_source = int(camera_index_param)
-        except ValueError: self.camera_capture_source = camera_index_param
+        try:
+            self.camera_capture_source = int(camera_index_param)
+        except ValueError:
+            # Keep string path (can be a udev symlink like /dev/camera_robot)
+            self.camera_capture_source = camera_index_param
         
         # --- Logique Asynchrone ---
         self.cap = None
@@ -173,7 +177,13 @@ class VisionNode(Node):
         elif self.camera_backend == 'gstreamer':
             backend_flag = cv2.CAP_GSTREAMER
         
-        self.get_logger().info(f"Attempting to open camera with backend: {self.camera_backend}")
+        src_log = self.camera_capture_source
+        if isinstance(src_log, str):
+            try:
+                src_log = f"{src_log} -> {os.path.realpath(src_log)}"
+            except Exception:
+                pass
+        self.get_logger().info(f"Attempting to open camera with backend: {self.camera_backend} (source={src_log})")
         self.cap = cv2.VideoCapture(self.camera_capture_source, backend_flag)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
@@ -210,6 +220,30 @@ class VisionNode(Node):
         time.sleep(1.0)
         return True
 
+    def _reopen_camera(self, reason: str = ""):
+        try:
+            if self.cap is not None:
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+            # Re-lire le paramètre camera_index (pour résoudre un éventuel nouveau lien udev)
+            cam_param = self.get_parameter('camera_index').get_parameter_value().string_value
+            try:
+                self.camera_capture_source = int(cam_param)
+            except ValueError:
+                self.camera_capture_source = cam_param
+            if reason:
+                self.get_logger().warn(f"Re-opening camera due to: {reason}")
+            ok = self._configure_camera()
+            if not ok:
+                self.get_logger().error("Camera reopen failed; will retry later")
+                return False
+            self.get_logger().info("Camera successfully re-opened")
+            return True
+        finally:
+            self.consecutive_failures = 0
+
     def _on_set_parameters(self, params: list[Parameter]) -> SetParametersResult:
         """Valide certains paramètres lorsqu'ils sont modifiés à chaud.
         N'interrompt pas l'exécution en cours; rejette les valeurs invalides.
@@ -218,41 +252,93 @@ class VisionNode(Node):
         allowed_device = {'auto', 'cuda', 'cpu'}
         allowed_backend = {'auto', 'v4l2', 'gstreamer'}
 
+        need_reopen = False
         for p in params:
             if p.name == 'flip_code':
                 if p.type_ != Parameter.Type.INTEGER or p.value not in allowed_flip:
                     return SetParametersResult(successful=False, reason='flip_code must be one of {-1,0,1,99}')
+                self.flip_code = int(p.value)
             elif p.name == 'confidence_threshold':
                 if p.type_ != Parameter.Type.DOUBLE or not (0.0 <= float(p.value) <= 1.0):
                     return SetParametersResult(successful=False, reason='confidence_threshold must be in [0,1]')
+                self.confidence_threshold = float(p.value)
             elif p.name == 'frame_rate':
                 if p.type_ != Parameter.Type.DOUBLE or float(p.value) <= 0.0:
                     return SetParametersResult(successful=False, reason='frame_rate must be > 0')
+                self.frame_rate = float(p.value)
+                try:
+                    if self.cap is not None and self.cap.isOpened():
+                        self.cap.set(cv2.CAP_PROP_FPS, self.frame_rate)
+                except Exception:
+                    pass
             elif p.name in ('frame_width', 'frame_height'):
                 if p.type_ != Parameter.Type.INTEGER or int(p.value) <= 0:
                     return SetParametersResult(successful=False, reason=f'{p.name} must be a positive integer')
+                if p.name == 'frame_width':
+                    self.frame_width = int(p.value)
+                else:
+                    self.frame_height = int(p.value)
+                try:
+                    if self.cap is not None and self.cap.isOpened():
+                        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_width)
+                        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
+                except Exception:
+                    pass
             elif p.name in ('persistence_frames_to_acquire', 'persistence_frames_to_lose'):
                 if p.type_ != Parameter.Type.INTEGER or int(p.value) < 0:
                     return SetParametersResult(successful=False, reason=f'{p.name} must be >= 0')
+                if p.name == 'persistence_frames_to_acquire':
+                    self.frames_to_acquire = int(p.value)
+                else:
+                    self.frames_to_lose = int(p.value)
             elif p.name == 'device':
                 if p.type_ != Parameter.Type.STRING or str(p.value).lower() not in allowed_device:
                     return SetParametersResult(successful=False, reason="device must be 'auto'|'cuda'|'cpu'")
             elif p.name == 'camera_backend':
                 if p.type_ != Parameter.Type.STRING or str(p.value).lower() not in allowed_backend:
                     return SetParametersResult(successful=False, reason="camera_backend must be 'auto'|'v4l2'|'gstreamer'")
+                self.camera_backend = str(p.value).lower()
+                need_reopen = True
             elif p.name == 'video_fourcc':
                 v = str(p.value)
                 if len(v) != 4 or not v.isascii():
                     return SetParametersResult(successful=False, reason='video_fourcc must be a 4-character ASCII code (e.g., MJPG)')
+                self.video_fourcc = v
+                try:
+                    if self.cap is not None and self.cap.isOpened():
+                        fourcc = cv2.VideoWriter_fourcc(*self.video_fourcc)
+                        self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+                except Exception:
+                    pass
+            elif p.name == 'camera_index':
+                # Allow hot-swap: update and trigger reopen
+                try:
+                    self.camera_capture_source = int(str(p.value))
+                except Exception:
+                    self.camera_capture_source = str(p.value)
+                need_reopen = True
+        # Apply reopen if needed (non-fatal if it fails; next reads will retry)
+        if need_reopen:
+            self._reopen_camera(reason='parameter update')
         return SetParametersResult(successful=True)
 
     def capture_worker(self):
         """Capture en continu et alimente la queue sans jamais bloquer."""
         if not self._configure_camera():
-            rclpy.shutdown(); return
+            # Essayez périodiquement de rouvrir au lieu d'arrêter brutalement
+            self.get_logger().error('Initial camera open failed; will retry periodically')
+            while self.is_running and not self._reopen_camera(reason='initial open failed'):
+                time.sleep(1.0)
         while self.is_running:
-            ret, frame = self.cap.read()
-            if not ret: continue
+            ret, frame = self.cap.read() if (self.cap is not None) else (False, None)
+            if not ret:
+                self.consecutive_failures += 1
+                if self.consecutive_failures >= self.max_consecutive_failures:
+                    self._reopen_camera(reason='read failures')
+                time.sleep(0.01)
+                continue
+            else:
+                self.consecutive_failures = 0
             if self.frame_queue.full():
                 try: self.frame_queue.get_nowait()   # drop l’ancienne
                 except queue.Empty: pass
