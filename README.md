@@ -14,6 +14,17 @@ source ~/ros2_ws/install/setup.bash
 
 2) Lancer la pipeline bras (YOLO → controller → interface)
 
+Option A — Script mock (recommandé pour la démo)
+
+```bash
+# lance vision + contrôleur + interface mock, puis vérifie les topics
+scripts/mock_demo.sh               # auto: yolov8n.pt et /dev/video0
+# monitoring 1‑fenêtre (taux + statut):
+source scripts/env.sh && python3 scripts/live_status.py
+```
+
+Option B — Commande launch directe
+
 ```bash
 ros2 launch robo_pointer_visual pipeline.launch.py \
   yolo_model:=/home/benja/ros2_ws/yolov8n.pt \
@@ -83,12 +94,13 @@ ros2 param set /robot_controller_node no_detection_timeout_s 4.0   # 3..5 s
 Commandes utiles:
 
 ```bash
-ros2 topic hz /detected_target_point
-ros2 topic hz /target_joint_angles
-ros2 topic echo /detected_target_point --once
-ros2 topic list | rg 'joint_states|target_joint_angles'  # vérifier l'alignement des topics
-ros2 topic echo /detection_acquired --once   # true si la cible est acquise
-ros2 topic echo /detection_area --once       # aire du meilleur bbox
+# Utiliser le wrapper CLI propre pour éviter les conflits conda/ROS
+scripts/ros2_cli.sh topic hz /detected_target_point
+scripts/ros2_cli.sh topic hz /target_joint_angles
+scripts/ros2_cli.sh topic echo /detected_target_point --once
+scripts/ros2_cli.sh topic list | rg 'joint_states|target_joint_angles'
+scripts/ros2_cli.sh topic echo /detection_acquired --once
+scripts/ros2_cli.sh topic echo /detection_area --once
 ```
 
 5) Charger des profils de démo (optionnel)

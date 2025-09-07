@@ -7,6 +7,7 @@ from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import JointState
+from rcl_interfaces.msg import SetParametersResult
 import traceback
 from ament_index_python.packages import get_package_share_directory
 from typing import Tuple, Optional, Dict, Any, List
@@ -160,6 +161,8 @@ class RealRobotInterfaceNode(Node):
             # Paramètres
             self.declare_parameter('leader_arm_port', LEADER_ARM_PORT)
             self.declare_parameter('read_frequency_hz', 20.0)
+            # Dry-run: n'active pas le couple et n'envoie pas de commandes moteurs
+            self.declare_parameter('enable_torque', True)
             # Topics (relatifs par défaut, pour supporter le namespacing)
             self.declare_parameter('joint_states_topic', 'joint_states')
             self.declare_parameter('target_joint_angles_topic', 'target_joint_angles')
@@ -167,7 +170,12 @@ class RealRobotInterfaceNode(Node):
             self._load_calibration_file()
             self._connect_motor_bus()
             self._initialize_group_sync_handlers()
-            self._initialize_motors_torque()
+
+            self.enable_torque = bool(self.get_parameter('enable_torque').get_parameter_value().bool_value)
+            if self.enable_torque:
+                self._initialize_motors_torque()
+            else:
+                self.get_logger().warn("enable_torque=false: DRY-RUN active (no torque, no motor commands)")
             read_frequency = self.get_parameter('read_frequency_hz').get_parameter_value().double_value
             
             joint_states_topic = self.get_parameter('joint_states_topic').get_parameter_value().string_value
@@ -178,6 +186,8 @@ class RealRobotInterfaceNode(Node):
                 JointState, target_joint_angles_topic, self.target_angles_callback, 10
             )
             self.read_publish_timer = self.create_timer(1.0 / read_frequency, self.read_and_publish_states)
+            # Dynamic param updates
+            self.add_on_set_parameters_callback(self.on_set_parameters)
             
             self.get_logger().info('Node initialized successfully. Ready to execute commands.')
 
@@ -239,6 +249,17 @@ class RealRobotInterfaceNode(Node):
                  self.get_logger().warn(f"Torque enable for {name}(ID:{motor_id}) potentially failed.")
             time.sleep(0.02)
         self.get_logger().info("Motor torque enabled.")
+
+    def _disable_motors_torque(self):
+        self.get_logger().info("Disabling torque for all motors (dry-run)...")
+        addr_torque = SCS_CONTROL_TABLE["Torque_Enable"][0]
+        for name in MOTOR_NAMES_ORDER:
+            motor_id = LEADER_ARM_MOTORS[name][0]
+            scs_comm_result, _ = self.packet_handler.write1ByteTxRx(self.port_handler, motor_id, addr_torque, 0)
+            if scs_comm_result != scs.COMM_SUCCESS:
+                 self.get_logger().warn(f"Torque disable for {name}(ID:{motor_id}) potentially failed.")
+            time.sleep(0.02)
+        self.get_logger().info("Motor torque disabled.")
         
     def read_and_publish_states(self):
         if not self.reader_motors_ok: return
@@ -277,6 +298,9 @@ class RealRobotInterfaceNode(Node):
 
     def target_angles_callback(self, msg: JointState):
         self.get_logger().debug(f"Received target angles for joints: {msg.name}")
+        if not getattr(self, 'enable_torque', True):
+            # Dry-run: ignore outgoing motor commands
+            return
         target_motor_names = msg.name
         target_angles_rad = msg.position
         target_angles_deg = [math.degrees(angle) for angle in target_angles_rad]
@@ -304,6 +328,28 @@ class RealRobotInterfaceNode(Node):
         comm_result = self.group_writer.txPacket()
         if comm_result != scs.COMM_SUCCESS:
             self.get_logger().error("GroupSyncWrite txPacket error.", throttle_duration_sec=1.0)
+
+    def on_set_parameters(self, params):
+        # Minimal dynamic handling: enable/disable torque at runtime
+        for p in params:
+            if p.name == 'enable_torque':
+                try:
+                    new_val = bool(p.value)
+                except Exception:
+                    return SetParametersResult(successful=False, reason='enable_torque must be bool')
+                if new_val != getattr(self, 'enable_torque', True):
+                    if new_val:
+                        try:
+                            self._initialize_motors_torque()
+                        except Exception as e:
+                            return SetParametersResult(successful=False, reason=f'Failed to enable torque: {e}')
+                    else:
+                        try:
+                            self._disable_motors_torque()
+                        except Exception as e:
+                            return SetParametersResult(successful=False, reason=f'Failed to disable torque: {e}')
+                    self.enable_torque = new_val
+        return SetParametersResult(successful=True)
             
     def cleanup_resources(self):
         self.get_logger().info("Attempting resource cleanup...")
